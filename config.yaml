@@ -1,6 +1,9 @@
 # config.yaml
 retry_policy:
-  max_attempts: 3                                    # Hard cap (Row 38 hits 4 → exhaust)
+  retry_caps:
+    upi: 3
+    card: 4
+    default: 3
   backoff_hours: [2, 24, 72]                         # Attempt 1→2→3 spacing
   retryable_reasons:
     - insufficient_funds
@@ -9,7 +12,6 @@ retry_policy:
     - pre_debit_notice_not_acked
     - mandate_not_registered
     - afa_required_not_completed
-    - card_expired
   hard_decline_reasons:                              # NEVER retry these
     - issuer_declined
     - mandate_lapsed_on_reissue

@@ -28,6 +28,7 @@ class FailedPayment(BaseModel):
     payment_method: str
     customer_ltv_paise: int = 0
     notes: str = ""
+    payment_state: Literal["confirmed_failed", "unknown", "possibly_debited"] = "confirmed_failed"
 
 
 class InterventionDecision(BaseModel):
@@ -38,11 +39,13 @@ class InterventionDecision(BaseModel):
         "send_card_update_link",
         "escalate_to_human",
         "stop_and_writeoff",
+        "resend_pre_debit_notice",
     ]
     reason: str
     confidence: float
     max_retries_left: int
     escalate: bool
+    degraded_mode: bool = False
 
 
 class AuditEntry(BaseModel):
@@ -53,3 +56,6 @@ class AuditEntry(BaseModel):
     amount_at_risk_paise: int
     recovered_paise: int
     status: str
+    cost_paise: int = 0
+    violation: bool = False
+    penalty_paise: int = 0
