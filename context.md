@@ -10,12 +10,13 @@ Build a Failed Subscription / Payment Recovery Agent that:
 
 ## Current Status
 - **Repository frozen for submission – Sep 1**
+- config.yaml: Integrated (Loaded dynamically into pipeline.py for retry caps, confidence thresholds, and recovery rates)
 - models.py: Done (FailedPayment, InterventionDecision, AuditEntry)
 - data/sample_batch.py: Done (40 realistic rows covering 9 Indian failure reasons, multi-tier pricing ₹199–₹9999, attempt counts 1–5, and failure mode triggers)
-- pipeline.py: Done (Gemini Flash + rule fallback + 3 explicit failure modes + action-based recovery rates + full breakdown summary + `--rules-only` + `--demo-*` CLI flags for pitch video)
+- pipeline.py: Done (Config-driven + Gemini Flash + rule fallback + 3 explicit failure modes + action-based recovery rates + full breakdown summary + `--rules-only` + `--demo-*` CLI flags for pitch video)
 - README.md: Done (Pre-empts batch vs webhook scope, numbers-first metrics table, 1-sentence overview, run commands, Mermaid architecture, 9 Indian failure reasons, 3 failure modes, and honest engineering roadmap)
 - pitch_script.md: Done (5-minute video pitch script with timestamps, visual cues, actual terminal commands, and confident batch-vs-live pre-emption)
-- requirements.txt: Done (pydantic, python-dotenv, google-generativeai)
+- requirements.txt: Done (pydantic, python-dotenv, google-generativeai, pyyaml)
 - .gitignore: Done (Ignored .env, .venv/, __pycache__/, *.pyc, logs/, .DS_Store)
 - .env.example: Done (Template for API key)
 
@@ -46,7 +47,8 @@ recovery_agent/
 ├── .gitignore           # Git ignore rules
 ├── README.md            # Numbers-first documentation & architecture
 ├── pitch_script.md      # 5-minute video presentation script
-├── requirements.txt     # Python dependencies
+├── requirements.txt     # Python dependencies (pydantic, python-dotenv, google-generativeai, pyyaml)
+├── config.yaml          # Declarative recovery & retry configuration
 ├── context.md           # Master project context & self-grade
 ├── models.py            # Pydantic v2 data contracts & validation
 ├── pipeline.py          # Decision engine, failure safety modes & CLI runner

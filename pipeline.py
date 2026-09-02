@@ -3,9 +3,11 @@ import sys
 import json
 import warnings
 import argparse
+from pathlib import Path
 from datetime import datetime
 from collections import Counter
 from dotenv import load_dotenv
+import yaml
 
 # Suppress SDK deprecation warning for clean console output
 warnings.filterwarnings("ignore", category=FutureWarning)
@@ -29,6 +31,29 @@ audit_log = []
 
 _gemini_configured = False
 
+# Load settings from config.yaml with robust defaults
+CONFIG_PATH = Path(__file__).parent / "config.yaml"
+
+
+def load_config() -> dict:
+    if CONFIG_PATH.exists():
+        try:
+            with open(CONFIG_PATH, "r", encoding="utf-8") as f:
+                return yaml.safe_load(f) or {}
+        except Exception as e:
+            print(f"Warning: Failed to parse config.yaml: {e}")
+    return {}
+
+
+CONFIG = load_config()
+
+# Extract config values
+RETRY_POLICY = CONFIG.get("retry_policy", {})
+MAX_ATTEMPTS = RETRY_POLICY.get("max_attempts", 3)
+HARD_DECLINE_REASONS = set(RETRY_POLICY.get("hard_decline_reasons", ["issuer_declined", "mandate_lapsed_on_reissue"]))
+CONFIDENCE_THRESHOLD = CONFIG.get("confidence_threshold", 0.60)
+AFA_THRESHOLD_INR = CONFIG.get("afa_thresholds_inr", {}).get("e_mandate", 15000)
+
 VALID_FAILURE_REASONS = {
     "mandate_not_registered",
     "afa_required_not_completed",
@@ -41,7 +66,7 @@ VALID_FAILURE_REASONS = {
     "pre_debit_notice_not_acked",
 }
 
-ACTION_RECOVERY_RATES = {
+DEFAULT_RECOVERY_RATES = {
     "retry_now": 0.70,
     "send_upi_pin_nudge": 0.65,
     "request_mandate_reissue": 0.50,
@@ -49,6 +74,8 @@ ACTION_RECOVERY_RATES = {
     "escalate_to_human": 0.0,
     "stop_and_writeoff": 0.0,
 }
+
+ACTION_RECOVERY_RATES = CONFIG.get("recovery_rates", DEFAULT_RECOVERY_RATES)
 
 
 def setup_gemini():
@@ -62,11 +89,11 @@ def setup_gemini():
 
 
 def _rule_based_fallback(record: FailedPayment) -> InterventionDecision:
-    # 1. Retry Exhaustion check
-    if record.attempt_count >= 4:
+    # 1. Retry Exhaustion check (attempt_count > max_attempts configured in config.yaml)
+    if record.attempt_count > MAX_ATTEMPTS:
         return InterventionDecision(
             chosen_action="stop_and_writeoff",
-            reason="Retry limit reached (attempt_count >= 4)",
+            reason=f"Retry limit reached (attempt_count > {MAX_ATTEMPTS})",
             confidence=1.0,
             max_retries_left=0,
             escalate=False,
@@ -89,7 +116,7 @@ def _rule_based_fallback(record: FailedPayment) -> InterventionDecision:
             chosen_action="send_upi_pin_nudge",
             reason="Customer failed UPI PIN entry; nudge sent to re-enter PIN.",
             confidence=0.85,
-            max_retries_left=2,
+            max_retries_left=max(0, MAX_ATTEMPTS - record.attempt_count),
             escalate=False,
         )
     elif reason == "insufficient_funds":
@@ -97,7 +124,7 @@ def _rule_based_fallback(record: FailedPayment) -> InterventionDecision:
             chosen_action="retry_now",
             reason="Insufficient funds; retry scheduled for auto-debit.",
             confidence=0.75,
-            max_retries_left=1,
+            max_retries_left=max(0, MAX_ATTEMPTS - record.attempt_count),
             escalate=False,
         )
     elif reason == "card_expired":
@@ -105,7 +132,7 @@ def _rule_based_fallback(record: FailedPayment) -> InterventionDecision:
             chosen_action="send_card_update_link",
             reason="Card expired; secure update link dispatched to customer.",
             confidence=0.90,
-            max_retries_left=2,
+            max_retries_left=max(0, MAX_ATTEMPTS - record.attempt_count),
             escalate=False,
         )
     elif reason in ["mandate_not_registered", "mandate_lapsed_on_reissue"]:
@@ -113,7 +140,7 @@ def _rule_based_fallback(record: FailedPayment) -> InterventionDecision:
             chosen_action="request_mandate_reissue",
             reason="Mandate invalid or lapsed; mandate reissue requested.",
             confidence=0.80,
-            max_retries_left=1,
+            max_retries_left=max(0, MAX_ATTEMPTS - record.attempt_count),
             escalate=False,
         )
     elif reason in ["gateway_timeout", "pre_debit_notice_not_acked"]:
@@ -121,7 +148,7 @@ def _rule_based_fallback(record: FailedPayment) -> InterventionDecision:
             chosen_action="retry_now",
             reason="Transient timeout or pre-debit notice re-queued; retry scheduled.",
             confidence=0.85,
-            max_retries_left=2,
+            max_retries_left=max(0, MAX_ATTEMPTS - record.attempt_count),
             escalate=False,
         )
     else:
@@ -135,11 +162,11 @@ def _rule_based_fallback(record: FailedPayment) -> InterventionDecision:
 
 
 def classify_and_decide(record: FailedPayment, use_llm: bool = True) -> InterventionDecision:
-    # 1. Retry Exhaustion: If attempt_count >= 4, force stop_and_writeoff
-    if record.attempt_count >= 4:
+    # 1. Retry Exhaustion check (attempt_count > max_attempts configured in config.yaml)
+    if record.attempt_count > MAX_ATTEMPTS:
         return InterventionDecision(
             chosen_action="stop_and_writeoff",
-            reason="Retry limit reached (attempt_count >= 4)",
+            reason=f"Retry limit reached (attempt_count > {MAX_ATTEMPTS})",
             confidence=1.0,
             max_retries_left=0,
             escalate=False,
@@ -153,7 +180,7 @@ def classify_and_decide(record: FailedPayment, use_llm: bool = True) -> Interven
         system_prompt = (
             "You are a Razorpay revenue recovery specialist for Indian payments. "
             "Choose the single best bounded intervention. "
-            "If the failure cause is ambiguous, disputed as fraud, or requires manual human discretion, return confidence < 0.60. "
+            f"If the failure cause is ambiguous, disputed as fraud, or requires manual human discretion, return confidence < {CONFIDENCE_THRESHOLD:.2f}. "
             "Reply with ONLY valid JSON strictly matching the requested schema."
         )
         user_message = (
@@ -222,8 +249,8 @@ def process_batch(batch, use_llm: bool = True):
         payment = FailedPayment(**row) if isinstance(row, dict) else row
         decision = classify_and_decide(payment, use_llm=use_llm)
 
-        # 3. Low Confidence check (< 0.60)
-        if decision.confidence < 0.60:
+        # 3. Low Confidence check (< CONFIDENCE_THRESHOLD from config)
+        if decision.confidence < CONFIDENCE_THRESHOLD:
             print(f"[{payment.id}] Overridden due to low confidence (conf={decision.confidence:.2f}) → escalate_to_human")
             decision.chosen_action = "escalate_to_human"
             decision.escalate = True
@@ -289,7 +316,7 @@ def main():
     parser.add_argument(
         "--demo-retry-exhaustion",
         action="store_true",
-        help="Demo retry exhaustion failure mode (attempt_count >= 4)",
+        help=f"Demo retry exhaustion failure mode (attempt_count > {MAX_ATTEMPTS})",
     )
     parser.add_argument(
         "--demo-out-of-scope",
@@ -299,17 +326,17 @@ def main():
     parser.add_argument(
         "--demo-low-confidence",
         action="store_true",
-        help="Demo low-confidence escalation override",
+        help=f"Demo low-confidence escalation override (confidence < {CONFIDENCE_THRESHOLD:.2f})",
     )
 
     args = parser.parse_args()
 
     if args.demo_retry_exhaustion:
         print("\n=== DEMO MODE: RETRY EXHAUSTION ===")
-        print("Trigger: attempt_count >= 4 -> Force stop_and_writeoff\n")
+        print(f"Trigger: attempt_count > {MAX_ATTEMPTS} (max_attempts in config.yaml) -> Force stop_and_writeoff\n")
         demo_batch = [
             row for row in BATCH
-            if (row.get("attempt_count", 0) if isinstance(row, dict) else row.attempt_count) >= 4
+            if (row.get("attempt_count", 0) if isinstance(row, dict) else row.attempt_count) > MAX_ATTEMPTS
         ]
         process_batch(demo_batch, use_llm=False)
     elif args.demo_out_of_scope:
@@ -322,7 +349,7 @@ def main():
         process_batch(demo_batch, use_llm=False)
     elif args.demo_low_confidence:
         print("\n=== DEMO MODE: LOW CONFIDENCE ESCALATION ===")
-        print("Trigger: confidence < 0.60 -> Force escalate_to_human\n")
+        print(f"Trigger: confidence < {CONFIDENCE_THRESHOLD:.2f} -> Force escalate_to_human\n")
         demo_batch = [
             row for row in BATCH
             if "dispute" in (row.get("notes", "").lower() if isinstance(row, dict) else row.notes.lower())

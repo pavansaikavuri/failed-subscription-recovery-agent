@@ -1,0 +1,33 @@
+# config.yaml
+retry_policy:
+  max_attempts: 3                                    # Hard cap (Row 38 hits 4 → exhaust)
+  backoff_hours: [2, 24, 72]                         # Attempt 1→2→3 spacing
+  retryable_reasons:
+    - insufficient_funds
+    - gateway_timeout
+    - upi_pin_failure
+    - pre_debit_notice_not_acked
+    - mandate_not_registered
+    - afa_required_not_completed
+    - card_expired
+  hard_decline_reasons:                              # NEVER retry these
+    - issuer_declined
+    - mandate_lapsed_on_reissue
+
+afa_thresholds_inr:
+  e_mandate: 15000                                   # >₹15k needs AFA
+  e_mandate_upper: 100000                            # >₹1L needs additional factor
+
+pre_debit_notice_hours: 24                           # RBI mandate
+
+communication:
+  channels: ["email", "sms", "whatsapp"]
+  templates:
+    retry_prompt: "payment_retry_link"
+    mandate_update: "mandate_update_link"
+    afa_required: "afa_auth_link"
+    pre_debit_notice: "pre_debit_reminder"
+    escalation: "human_handoff_notice"
+
+dedupe:
+  ttl_hours: 72                                      # Webhook idempotency window
