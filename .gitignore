@@ -9,8 +9,3 @@ __pycache__/
 *.pyc
 logs/
 .DS_Store
-
-# Hidden docs / draft artifacts (add to git later)
-README.md
-pitch_script.md
-benchmark_results.md
