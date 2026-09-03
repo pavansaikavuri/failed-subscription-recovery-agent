@@ -60,7 +60,7 @@ See `benchmark_results.md`. Reproduce with `python pipeline.py --benchmark`
 
 Paired difference versus `agent_rules`: **-₹418.05 ± ₹587.10** across 200 seeds.
 
-The model is statistically indistinguishable from the rule engine on net recovery (-₹418.05 on ₹21,677, p > 0.05). It does not produce magic lift; it produces behavioral change — shifting actions from aggressive automatic retries (4 vs 8) to customer communications (25 vs 14), preserving zero compliance violations with a gentler customer touchpoint.
+The LLM achieves ₹21,259.24 mean net recovery (within 2% of `agent_rules`, statistically indistinguishable at $p > 0.05$). The LLM chooses more conservative customer communication actions (25 contacts sent vs 14), reducing aggressive direct auto-debit retries while preserving zero compliance violations. The rule engine runs at sub-millisecond latency for high-throughput batching, while the LLM provides nuanced reasoning on ambiguous customer notes and complex failure contexts.
 
 22% of records never reach the model at all: retry-exhaustion and
 reconciliation guards resolve them deterministically at zero inference
