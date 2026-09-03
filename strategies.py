@@ -375,7 +375,7 @@ def strategy_agent_rules(record: FailedPayment) -> InterventionDecision:
 # Strategy 6: Agent LLM (Gemini + All Guards + Fail-Closed + Cache)
 # -------------------------------------------------------------------------
 def strategy_agent_llm(
-    record: FailedPayment, refresh_cache: bool = False
+    record: FailedPayment, refresh_cache: bool = False, cache_only: bool = False
 ) -> InterventionDecision:
     """
     LLM reasoning agent equipped with:
@@ -415,6 +415,17 @@ def strategy_agent_llm(
         cached_data = LLM_CACHE[record.id]
         return InterventionDecision(**cached_data)
 
+    # If cache-only mode (e.g., benchmark without API key), handle cache miss via rule fallback
+    if cache_only:
+        _llm_degraded_count += 1
+        fallback = strategy_agent_rules(record)
+        if fallback.chosen_action == "retry_now":
+            fallback.chosen_action = "escalate_to_human"
+            fallback.escalate = True
+            fallback.degraded_mode = True
+            fallback.reason = "Cache miss in cache-only mode: autonomous retry refused."
+        return fallback
+
     # Live call with backoff
     try:
         decision = call_gemini_with_backoff(record, max_retries=5)
@@ -424,7 +435,7 @@ def strategy_agent_llm(
         return decision
 
     except Exception as e:
-        print(f"[{record.id}] LLM unavailable after backoff ({type(e).__name__}), executing fail-closed rule fallback")
+        print(f"[{record.id}] LLM unavailable after backoff ({type(e).__name__}), executing fail-closed rule fallback", flush=True)
         _llm_degraded_count += 1
         fallback = strategy_agent_rules(record)
 
@@ -499,6 +510,11 @@ def populate_llm_cache(
             print(f"  [{i}/{len(records)}] {rec.id} -> Cached ({LLM_CACHE[rec.id].get('chosen_action')})", flush=True)
             _llm_cached_count += 1
             _llm_live_count += 1
+        elif (getattr(rec, "payment_state", "confirmed_failed") != "confirmed_failed" or
+              rec.attempt_count >= get_retry_cap(rec.payment_method)):
+            print(f"  [{i}/{len(records)}] {rec.id} ({rec.failure_reason}) -> Resolved by deterministic guard (no LLM call)", flush=True)
+            decision = strategy_agent_llm(rec, refresh_cache=False)
+            print(f"      Decision: {decision.chosen_action} (conf={decision.confidence:.2f}, degraded={decision.degraded_mode})", flush=True)
         else:
             print(f"  [{i}/{len(records)}] {rec.id} ({rec.failure_reason}) -> Calling Gemini API...", flush=True)
             decision = strategy_agent_llm(rec, refresh_cache=True)
@@ -514,6 +530,6 @@ STRATEGIES = {
     "message_only": strategy_message_only,
     "naive_rules": strategy_naive_rules,
     "agent_rules": strategy_agent_rules,
-    "agent_llm": strategy_agent_llm,
+    "agent_llm": lambda rec: strategy_agent_llm(rec, cache_only=True),
     "oracle": strategy_oracle,
 }

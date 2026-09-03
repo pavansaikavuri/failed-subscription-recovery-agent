@@ -158,5 +158,93 @@
     "max_retries_left": 3,
     "escalate": false,
     "degraded_mode": false
+  },
+  "pay_In28bCdEFGHI87": {
+    "chosen_action": "request_mandate_reissue",
+    "reason": "UPI handle change without re-authorization invalidated the existing mandate, requiring a mandate reissue.",
+    "confidence": 0.92,
+    "max_retries_left": 0,
+    "escalate": false,
+    "degraded_mode": false
+  },
+  "pay_In29cDeFGHIJ98": {
+    "chosen_action": "escalate_to_human",
+    "reason": "Failure is due to an bank-side fraud prevention velocity rule trigger, requiring manual human discretion and review.",
+    "confidence": 0.55,
+    "max_retries_left": 0,
+    "escalate": true,
+    "degraded_mode": false
+  },
+  "pay_In30dEfGHIJK09": {
+    "chosen_action": "send_upi_pin_nudge",
+    "reason": "UPI PIN authorization failed due to biometric error on the user device. Sending a targeted UPI PIN nudge to prompt the user to re-try with correct credentials.",
+    "confidence": 0.92,
+    "max_retries_left": 2,
+    "escalate": false,
+    "degraded_mode": false
+  },
+  "pay_In31eFgHIJKL10": {
+    "chosen_action": "request_mandate_reissue",
+    "reason": "The e-mandate lapsed during card reissue; requesting a mandate reissue allows the customer to authorize the recurring payment setup with their new card details.",
+    "confidence": 0.92,
+    "max_retries_left": 2,
+    "escalate": false,
+    "degraded_mode": false
+  },
+  "pay_In32fGhIJKLM21": {
+    "chosen_action": "send_upi_pin_nudge",
+    "reason": "UPI transaction failed due to temporary insufficient funds. Sending a UPI PIN nudge encourages the high-LTV customer to retry the transaction after re-funding or selecting an alternate UPI account.",
+    "confidence": 0.85,
+    "max_retries_left": 2,
+    "escalate": false,
+    "degraded_mode": false
+  },
+  "pay_In33gHiJKLMN32": {
+    "chosen_action": "retry_now",
+    "reason": "Gateway timeout caused by transient Yes Bank UPI latency surge; retrying payment.",
+    "confidence": 0.85,
+    "max_retries_left": 1,
+    "escalate": false,
+    "degraded_mode": false
+  },
+  "pay_In34hIjKLMNO43": {
+    "chosen_action": "send_card_update_link",
+    "reason": "Card expired. Retrying will continue to fail; sending card update link to the customer is required.",
+    "confidence": 0.92,
+    "max_retries_left": 0,
+    "escalate": false,
+    "degraded_mode": false
+  },
+  "pay_In35iJkLMNOP54": {
+    "chosen_action": "send_card_update_link",
+    "reason": "3DS authentication timed out before OTP entry. Sending a card update link allows the customer to re-initiate and complete the AFA process.",
+    "confidence": 0.85,
+    "max_retries_left": 2,
+    "escalate": false,
+    "degraded_mode": false
+  },
+  "pay_In36jKlMNOPQ65": {
+    "chosen_action": "request_mandate_reissue",
+    "reason": "Mandate is not registered due to Paytm Payments Bank migration issue. Customer must reissue the mandate to enable recurring debits.",
+    "confidence": 0.92,
+    "max_retries_left": 0,
+    "escalate": false,
+    "degraded_mode": false
+  },
+  "pay_In37kLmNOPQR76": {
+    "chosen_action": "resend_pre_debit_notice",
+    "reason": "The recurring UPI payment failed because the pre-debit notice was not acknowledged. Resending the pre-debit notice is mandatory under RBI guidelines before re-attempting debit.",
+    "confidence": 0.92,
+    "max_retries_left": 2,
+    "escalate": false,
+    "degraded_mode": false
+  },
+  "pay_In38lMnOPQRS87": {
+    "chosen_action": "send_card_update_link",
+    "reason": "The IndusInd debit card reached its daily limit. Sending a card update link enables the high-LTV customer to switch to an alternate payment method or card.",
+    "confidence": 0.88,
+    "max_retries_left": 3,
+    "escalate": false,
+    "degraded_mode": false
   }
 }

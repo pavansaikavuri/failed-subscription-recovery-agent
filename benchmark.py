@@ -14,9 +14,8 @@ from outcome_model import (
 from strategies import (
     STRATEGIES,
     strategy_oracle,
+    LLM_CACHE,
     populate_llm_cache,
-    _llm_live_count,
-    _llm_degraded_count,
 )
 from data.sample_batch import BATCH
 from pipeline import get_retry_cap, VALID_FAILURE_REASONS, DEDUPE_TTL_HOURS
@@ -49,10 +48,11 @@ def run_benchmark(
     save_markdown: bool = True,
     refresh_llm_cache: bool = False,
     verbose: bool = True,
+    include_sweep: bool = True,
 ) -> Tuple[List[StrategyBenchmarkStats], str]:
     """
     Executes multi-strategy benchmark across 7 strategies over n_seeds (default 200)
-    with paired statistics against agent_rules.
+    with paired statistics against agent_rules. Strictly cache-only for agent_llm.
     """
     valid_records: List[FailedPayment] = []
     out_of_scope_records: List[Tuple[str, int, str]] = []
@@ -72,7 +72,7 @@ def run_benchmark(
         (r.get("amount_paise", 0) if isinstance(r, dict) else r.amount_paise) for r in batch
     )
 
-    # Step 1: Pre-compute decisions ONCE per strategy
+    # Step 1: Pre-compute decisions ONCE per strategy (Strictly cache-only for LLM)
     strategy_decisions: Dict[str, Dict[str, InterventionDecision]] = {}
 
     for strat_name, strat_fn in STRATEGIES.items():
@@ -80,22 +80,33 @@ def run_benchmark(
         for rec in valid_records:
             if strat_name == "oracle":
                 decisions[rec.id] = strategy_oracle(rec, penalty_paise=penalty_paise)
-            elif strat_name == "agent_llm":
-                decisions[rec.id] = strat_fn(rec, refresh_cache=refresh_llm_cache)
             else:
                 decisions[rec.id] = strat_fn(rec)
         strategy_decisions[strat_name] = decisions
 
-    # LLM diagnostic reporting
-    llm_live = sum(1 for d in strategy_decisions["agent_llm"].values() if not d.degraded_mode)
-    llm_degraded = sum(1 for d in strategy_decisions["agent_llm"].values() if d.degraded_mode)
+    # Compute agent_llm composition breakdown
+    z_guard = 0
+    x_live = 0
+    y_fallback = 0
+
+    for rec in valid_records:
+        retry_cap = get_retry_cap(rec.payment_method)
+        is_guard = (getattr(rec, "payment_state", "confirmed_failed") != "confirmed_failed" or
+                    rec.attempt_count >= retry_cap)
+        if is_guard:
+            z_guard += 1
+        elif rec.id in LLM_CACHE and not strategy_decisions["agent_llm"][rec.id].degraded_mode:
+            x_live += 1
+        else:
+            y_fallback += 1
+
+    composition_line = f"agent_llm composition: {x_live} live LLM / {y_fallback} rule fallback (cache miss) / {z_guard} deterministic guard"
     if verbose:
-        print(f"LLM decisions: {llm_live} live, {llm_degraded} degraded (Total evaluated: {len(valid_records)})")
+        print("\n" + composition_line)
 
     oracle_decisions = strategy_decisions["oracle"]
 
     # Step 2: Simulate outcomes across all seeds
-    # results_by_strategy: strat_name -> list of net_paise per seed
     net_per_seed_by_strat: Dict[str, List[float]] = {name: [] for name in STRATEGIES}
     runs_by_strategy: Dict[str, List[Dict[str, Any]]] = {name: [] for name in STRATEGIES}
 
@@ -216,7 +227,8 @@ def run_benchmark(
     timestamp_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     md_lines = [
         f"# Benchmark Results – Recovery Agent Multi-Strategy Evaluation",
-        f"\n**Timestamp:** {timestamp_str} | **Batch Size:** {len(batch)} records | **Seeds:** {n_seeds} | **Total at Risk:** ₹{total_at_risk_paise/100:,.2f} | **Penalty:** ₹{penalty_paise/100:,.0f}\n",
+        f"\n**Timestamp:** {timestamp_str} | **Batch Size:** {len(batch)} records | **Seeds:** {n_seeds} | **Total at Risk:** ₹{total_at_risk_paise/100:,.2f} | **Penalty:** ₹{penalty_paise/100:,.0f}",
+        f"\n`{composition_line}`\n",
         "| Rank | Strategy | Mean Net (₹) | Paired Diff vs agent_rules (₹) | Net Range (₹) | Gross Recov % | Decision Match % | Regret vs Oracle (₹) | Violations | Retries | Contacts | Escalations |",
         "|:---:|:---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|",
     ]
@@ -231,28 +243,38 @@ def run_benchmark(
     if verbose:
         print("\n" + md_table + "\n")
 
+    full_output = md_table
+
     if save_markdown:
         out_path = Path(__file__).parent / "benchmark_results.md"
         with open(out_path, "w", encoding="utf-8") as f:
             f.write(md_table + "\n")
+
+        if include_sweep:
+            sweep_md = run_penalty_sweep(batch=batch, n_seeds=n_seeds, save_to_file=True, verbose=verbose)
+            full_output += "\n\n" + sweep_md
+
         if verbose:
             print(f"Benchmark results successfully saved to: {out_path}")
 
-    return benchmark_stats, md_table
+    return benchmark_stats, full_output
 
 
 def run_penalty_sweep(
     batch: List[dict] = BATCH,
     n_seeds: int = 200,
     penalties_inr: List[int] = [0, 250, 500, 913, 1500, 3000, 5000],
+    save_to_file: bool = True,
+    verbose: bool = True,
 ) -> str:
     """
     Evaluates all 7 strategies across varying regulatory violation penalty levels
     and dynamically derives the break-even penalty where agent_rules overtakes naive_rules.
     """
-    print(f"\n==================================================================")
-    print(f"      COMPLIANCE PENALTY SENSITIVITY SWEEP (Seeds={n_seeds})")
-    print(f"==================================================================\n")
+    if verbose:
+        print(f"\n==================================================================")
+        print(f"      COMPLIANCE PENALTY SENSITIVITY SWEEP (Seeds={n_seeds})")
+        print(f"==================================================================\n")
 
     sweep_results: Dict[int, Dict[str, float]] = {}
     strategy_names = list(STRATEGIES.keys())
@@ -265,13 +287,14 @@ def run_penalty_sweep(
             penalty_paise=penalty_paise,
             save_markdown=False,
             verbose=False,
+            include_sweep=False,
         )
         sweep_results[p_inr] = {s.strategy_name: s.mean_net_paise / 100 for s in stats}
 
     # Derive Break-Even Penalty analytically
-    # Net(agent_rules) = Gross_agent - Cost_agent - V_agent * P
-    # Net(naive_rules) = Gross_naive - Cost_naive - V_naive * P
-    stats_zero, _ = run_benchmark(batch=batch, n_seeds=n_seeds, penalty_paise=0, save_markdown=False, verbose=False)
+    stats_zero, _ = run_benchmark(
+        batch=batch, n_seeds=n_seeds, penalty_paise=0, save_markdown=False, verbose=False, include_sweep=False
+    )
     stat_dict = {s.strategy_name: s for s in stats_zero}
     agent_stat = stat_dict["agent_rules"]
     naive_stat = stat_dict["naive_rules"]
@@ -287,13 +310,14 @@ def run_penalty_sweep(
     else:
         breakeven_penalty_inr = 0.0
 
-    print(f"Exact Break-Even Penalty: ₹{breakeven_penalty_inr:,.2f}")
-    print(f"(At penalties >= ₹{breakeven_penalty_inr:,.2f}, agent_rules outperforms naive_rules net of compliance risk)\n")
+    if verbose:
+        print(f"Exact Break-Even Penalty: ₹{breakeven_penalty_inr:,.2f}")
+        print(f"(At penalties >= ₹{breakeven_penalty_inr:,.2f}, agent_rules outperforms naive_rules net of compliance risk)\n")
 
     # Render Markdown Table for Penalty Sweep
     header_cols = ["Penalty (₹)"] + [f"**{name}**" for name in strategy_names] + ["Top Strategy"]
     sweep_lines = [
-        "\n## Compliance Penalty Sensitivity\n",
+        "## Compliance Penalty Sensitivity\n",
         f"**Exact Break-Even Penalty:** ₹{breakeven_penalty_inr:,.2f} per violation (agent_rules overtakes naive_rules)\n",
         "| " + " | ".join(header_cols) + " |",
         "| " + " | ".join([":---:"] * len(header_cols)) + " |",
@@ -313,14 +337,15 @@ def run_penalty_sweep(
         sweep_lines.append("| " + " | ".join(row_vals) + " |")
 
     sweep_table = "\n".join(sweep_lines)
-    print(sweep_table + "\n")
+    if verbose:
+        print(sweep_table + "\n")
 
-    # Append to benchmark_results.md
-    out_path = Path(__file__).parent / "benchmark_results.md"
-    if out_path.exists():
-        with open(out_path, "a", encoding="utf-8") as f:
-            f.write("\n" + sweep_table + "\n")
-        print(f"Penalty sweep results successfully appended to: {out_path}")
+    # Append to benchmark_results.md if requested
+    if save_to_file:
+        out_path = Path(__file__).parent / "benchmark_results.md"
+        if out_path.exists():
+            with open(out_path, "a", encoding="utf-8") as f:
+                f.write("\n\n" + sweep_table + "\n")
 
     return sweep_table
 
