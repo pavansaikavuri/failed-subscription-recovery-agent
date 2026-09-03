@@ -60,7 +60,9 @@ See `benchmark_results.md`. Reproduce with `python pipeline.py --benchmark`
 
 Paired difference versus `agent_rules`: **-₹418.05 ± ₹587.10** across 200 seeds.
 
-The LLM achieves ₹21,259.24 mean net recovery (within 2% of `agent_rules`, statistically indistinguishable at $p > 0.05$). The LLM chooses more conservative customer communication actions (25 contacts sent vs 14), reducing aggressive direct auto-debit retries while preserving zero compliance violations. The rule engine runs at sub-millisecond latency for high-throughput batching, while the LLM provides nuanced reasoning on ambiguous customer notes and complex failure contexts.
+The difference (-₹418.05) is smaller than its own standard error (± ₹587.10) across 200 paired seeds.
+
+The LLM substitutes messaging for retrying: 4 retries versus the rule engine's 8, but 25 customer contacts versus 14. It trades debit attempts for customer friction and nets out flat. Oracle decision match is 68.4% for rules versus 57.9% for the LLM — the deterministic engine is closer to optimal, not merely cheaper.
 
 22% of records never reach the model at all: retry-exhaustion and
 reconciliation guards resolve them deterministically at zero inference
@@ -114,6 +116,16 @@ python pipeline.py --demo-retry-exhaustion
 python pipeline.py --demo-out-of-scope
 python pipeline.py --demo-low-confidence
 ```
+
+## On held-out evaluation
+
+No parameter in the outcome model is fitted to this batch. Recovery
+probabilities are stated domain priors calibrated against published
+industry retry-recovery rates, not learned from the evaluation data.
+A train/test split guards against overfitting to the evaluation set;
+with no fitted parameters there is no leakage to guard against.
+Statistical confidence instead comes from 200 paired seeds with
+reported standard errors.
 
 ## What broke and how I fixed it
 

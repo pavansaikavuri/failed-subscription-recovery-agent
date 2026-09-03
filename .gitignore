@@ -9,3 +9,4 @@ __pycache__/
 *.pyc
 logs/
 .DS_Store
+verify_test/
