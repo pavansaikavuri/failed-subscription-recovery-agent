@@ -4,3 +4,4 @@ __pycache__/
 *.pyc
 logs/
 .DS_Store
+README.md
