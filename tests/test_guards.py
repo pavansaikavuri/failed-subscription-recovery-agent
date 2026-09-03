@@ -150,3 +150,41 @@ def test_retry_cap_differs_by_payment_method():
     assert card_cap == 4
     assert upi_cap != card_cap
     assert default_cap == 3
+
+
+def test_high_value_monetary_threshold_escalation():
+    """A record above the monetary threshold escalates even when the failure reason permits autonomous retry."""
+    from pipeline import HUMAN_APPROVAL_ABOVE_PAISE
+    from strategies import strategy_agent_llm
+
+    # Record with failure reason gateway_timeout that normally permits retry_now,
+    # but amount is above the threshold (e.g. ₹60,000 / 6,000,000 paise > 5,000,000 paise)
+    record = FailedPayment(
+        id="pay_high_value_01",
+        merchant_id="mer_01",
+        customer_id="cust_high",
+        amount_paise=HUMAN_APPROVAL_ABOVE_PAISE + 100000,  # Above threshold
+        currency="INR",
+        failure_reason="gateway_timeout",
+        attempt_count=1,
+        last_attempt_at=datetime(2026, 9, 1, 10, 0, 0),
+        payment_method="card",
+        customer_ltv_paise=50000000,
+        notes="High-value enterprise tier annual subscription",
+        payment_state="confirmed_failed",
+    )
+
+    # Test agent_rules forces escalation
+    decision_rules = strategy_agent_rules(record)
+    assert decision_rules.chosen_action == "escalate_to_human"
+    assert decision_rules.escalate is True
+    assert decision_rules.reason == "High-value payment requires merchant approval."
+    assert decision_rules.guard_fired == "high_value_escalation"
+
+    # Test agent_llm also forces escalation
+    decision_llm = strategy_agent_llm(record, cache_only=True)
+    assert decision_llm.chosen_action == "escalate_to_human"
+    assert decision_llm.escalate is True
+    assert decision_llm.reason == "High-value payment requires merchant approval."
+    assert decision_llm.guard_fired == "high_value_escalation"
+

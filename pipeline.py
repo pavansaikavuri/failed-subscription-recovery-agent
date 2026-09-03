@@ -22,7 +22,12 @@ if sys.platform == "win32" and hasattr(sys.stdout, "reconfigure"):
         pass
 
 from models import FailedPayment, InterventionDecision, AuditEntry
-from outcome_model import simulate_outcome, OutcomeResult, get_effective_probability
+from outcome_model import (
+    simulate_outcome,
+    OutcomeResult,
+    get_effective_probability,
+    VIOLATION_PENALTY_PAISE,
+)
 from data.sample_batch import BATCH
 
 load_dotenv()
@@ -51,6 +56,10 @@ RETRYABLE_REASONS = set(RETRY_POLICY.get("retryable_reasons", []))
 CONFIDENCE_THRESHOLD = float(CONFIG.get("confidence_threshold", 0.60))
 AFA_THRESHOLD_INR = float(CONFIG.get("afa_thresholds_inr", {}).get("e_mandate", 15000))
 DEDUPE_TTL_HOURS = float(CONFIG.get("dedupe", {}).get("ttl_hours", 72))
+
+ESCALATION_THRESHOLDS = CONFIG.get("escalation_thresholds_paise", {})
+HUMAN_APPROVAL_ABOVE_PAISE = int(ESCALATION_THRESHOLDS.get("human_approval_above", 5000000))
+CONFIG_VERSION = str(CONFIG.get("version", "1.0.0"))
 
 VALID_FAILURE_REASONS = {
     "mandate_not_registered",
@@ -91,43 +100,64 @@ def get_retry_cap(payment_method: str) -> int:
     return RETRY_CAPS.get(payment_method.lower(), RETRY_CAPS.get("default", 3))
 
 
+def write_audit_log_jsonl(entries: List[AuditEntry], file_path: Optional[Path] = None) -> None:
+    """Writes audit entries to logs/audit_log.jsonl with exactly required fields."""
+    if file_path is None:
+        file_path = Path(__file__).parent / "logs" / "audit_log.jsonl"
+    file_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(file_path, "w", encoding="utf-8") as f:
+        for entry in entries:
+            f.write(json.dumps(entry.to_audit_log_dict()) + "\n")
+
+
 def process_batch(
-    batch: List[dict],
+    batch: List[FailedPayment],
     strategy: Optional[Callable[[FailedPayment], InterventionDecision]] = None,
-    use_llm: bool = True,
-    seed: int = 0,
     n_seeds: int = 1,
+    seed: int = 0,
+    penalty_paise: int = VIOLATION_PENALTY_PAISE,
+    prob_multiplier: float = 1.0,
+    write_audit_log: bool = False,
     verbose: bool = True,
     clear_ledger: bool = True,
 ) -> BatchResult:
     """
-    Universal batch execution engine:
-    1. Rejects out-of-scope / malformed failure reasons gracefully
-    2. Enforces idempotency ledger deduplication
-    3. Calls strategy(payment) to obtain decision
-    4. Simulates genuine recovery outcome via outcome_model
-    5. Returns structured accounting and audit records
+    Universal recovery execution pipeline.
+    Keeps universal machinery:
+      1. Rejection of out-of-scope records
+      2. Idempotency ledger
+      3. Outcome simulation via independent outcome model
+      4. Financial accounting & audit trail
+    All intelligence, guards, thresholds, and overrides live in the strategy.
     """
     global IDEMPOTENCY_LEDGER
     if clear_ledger:
         IDEMPOTENCY_LEDGER = {}
-
-    # Import strategies lazily if not provided
+    
     if strategy is None:
-        from strategies import strategy_agent_llm, strategy_agent_rules
-        strategy = strategy_agent_llm if use_llm else strategy_agent_rules
+        from strategies import strategy_agent_rules
+        strategy = strategy_agent_rules
 
     if n_seeds > 1:
         results = [
-            process_batch(batch, strategy=strategy, use_llm=use_llm, seed=s, n_seeds=1, verbose=False, clear_ledger=True)
+            process_batch(
+                batch,
+                strategy=strategy,
+                n_seeds=1,
+                seed=s,
+                penalty_paise=penalty_paise,
+                prob_multiplier=prob_multiplier,
+                write_audit_log=(write_audit_log and s == 0),
+                verbose=False,
+            )
             for s in range(n_seeds)
         ]
         mean_net = sum(r.net_recovered_paise for r in results) / n_seeds
+        mean_gross = sum(r.total_gross_recovered_paise for r in results) / n_seeds
         min_net = min(r.net_recovered_paise for r in results)
         max_net = max(r.net_recovered_paise for r in results)
-        mean_gross = sum(r.total_gross_recovered_paise for r in results) / n_seeds
-        expected = results[0].expected_recoverable_paise
         at_risk = results[0].total_at_risk_paise
+        expected = results[0].expected_recoverable_paise
 
         print(f"\n=== MULTI-SEED EVALUATION (n_seeds={n_seeds}) ===")
         print(f"At risk:                  ₹{at_risk / 100:,.2f}")
@@ -154,9 +184,9 @@ def process_batch(
     now = datetime.now()
 
     for row in batch:
-        record_id = row.get("id") if isinstance(row, dict) else getattr(row, "id", "unknown")
-        raw_reason = row.get("failure_reason") if isinstance(row, dict) else getattr(row, "failure_reason", "")
+        record_id = row.get("id", "unknown") if isinstance(row, dict) else getattr(row, "id", "unknown")
         amount_paise = row.get("amount_paise", 0) if isinstance(row, dict) else getattr(row, "amount_paise", 0)
+        raw_reason = row.get("failure_reason", "") if isinstance(row, dict) else getattr(row, "failure_reason", "")
 
         total_at_risk_paise += amount_paise
 
@@ -170,6 +200,8 @@ def process_batch(
                 confidence=1.0,
                 max_retries_left=0,
                 escalate=False,
+                decision_source="guard",
+                guard_fired="out_of_scope_rejection",
             )
             entry = AuditEntry(
                 timestamp=now,
@@ -182,6 +214,11 @@ def process_batch(
                 cost_paise=0,
                 violation=False,
                 penalty_paise=0,
+                case_id=f"case_{record_id}",
+                decision_source="guard",
+                guard_fired="out_of_scope_rejection",
+                seed=seed,
+                config_version=CONFIG_VERSION,
             )
             audit_log.append(entry)
             rejected_count += 1
@@ -199,13 +236,13 @@ def process_batch(
         if action == "stop_and_writeoff":
             written_off_count += 1
 
-        # 3. Universal Idempotency ledger check (dedupe.ttl_hours window)
+        # 3. Universal Idempotency ledger check
         ledger_key = (payment.id, action)
         if ledger_key in IDEMPOTENCY_LEDGER:
             last_executed = IDEMPOTENCY_LEDGER[ledger_key]
             if (now - last_executed) < timedelta(hours=DEDUPE_TTL_HOURS):
                 if verbose:
-                    print(f"[{payment.id}] DUPLICATE SUPPRESSED – action '{action}' already executed within {DEDUPE_TTL_HOURS}h")
+                    print(f"[{payment.id}] DUPLICATE SUPPRESSED – action '{action}' already executed")
                 entry = AuditEntry(
                     timestamp=now,
                     record_id=payment.id,
@@ -217,6 +254,11 @@ def process_batch(
                     cost_paise=0,
                     violation=False,
                     penalty_paise=0,
+                    case_id=f"case_{payment.id}",
+                    decision_source=decision.decision_source,
+                    guard_fired=decision.guard_fired or "idempotency_deduplication",
+                    seed=seed,
+                    config_version=CONFIG_VERSION,
                 )
                 audit_log.append(entry)
                 continue
@@ -224,10 +266,15 @@ def process_batch(
         # Record into idempotency ledger
         IDEMPOTENCY_LEDGER[ledger_key] = now
 
-        # 4. Universal Outcome Simulation via independent outcome model
+        # 4. Universal Outcome Simulation
         retry_cap = get_retry_cap(payment.payment_method)
         outcome: OutcomeResult = simulate_outcome(
-            payment, action, seed=seed, retry_cap=retry_cap
+            payment,
+            action,
+            seed=seed,
+            retry_cap=retry_cap,
+            penalty_amount_paise=penalty_paise,
+            prob_multiplier=prob_multiplier,
         )
 
         expected_prob = outcome.effective_probability
@@ -264,6 +311,11 @@ def process_batch(
             cost_paise=outcome.cost_paise,
             violation=outcome.violation,
             penalty_paise=outcome.penalty_paise,
+            case_id=f"case_{payment.id}",
+            decision_source=decision.decision_source,
+            guard_fired=decision.guard_fired,
+            seed=seed,
+            config_version=CONFIG_VERSION,
         )
         audit_log.append(entry)
 
@@ -273,6 +325,9 @@ def process_batch(
             print(
                 f"[{payment.id}] {payment.failure_reason} → {action} (conf={decision.confidence:.2f}){recovery_str}{violation_str}"
             )
+
+    if write_audit_log and seed == 0:
+        write_audit_log_jsonl(audit_log)
 
     net_recovered_paise = total_gross_recovered_paise - total_cost_paise - total_penalty_paise
     recovery_rate_pct = (total_gross_recovered_paise / total_at_risk_paise * 100) if total_at_risk_paise > 0 else 0.0
@@ -353,6 +408,11 @@ def main():
         help="Run sensitivity sweep across multiple compliance penalty levels",
     )
     parser.add_argument(
+        "--sweep-probabilities",
+        action="store_true",
+        help="Run sensitivity sweep across multiple recovery probability multipliers (0.8x to 1.2x)",
+    )
+    parser.add_argument(
         "--demo-out-of-scope",
         action="store_true",
         help="Demo out-of-scope / malformed failure_reason rejection",
@@ -382,6 +442,9 @@ def main():
     elif args.sweep_penalty:
         from benchmark import run_penalty_sweep
         run_penalty_sweep(BATCH, n_seeds=args.seeds if args.seeds > 1 else 200)
+    elif args.sweep_probabilities:
+        from benchmark import run_probability_sweep
+        run_probability_sweep(BATCH, n_seeds=args.seeds if args.seeds > 1 else 200)
     elif args.benchmark:
         from benchmark import run_benchmark
         run_benchmark(BATCH, n_seeds=args.seeds if args.seeds > 1 else 200, refresh_llm_cache=args.refresh_llm_cache)
@@ -421,7 +484,7 @@ def main():
         strat = strategy_agent_rules if args.rules_only else (
             lambda rec: strategy_agent_llm(rec, refresh_cache=args.refresh_llm_cache)
         )
-        process_batch(BATCH, strategy=strat, n_seeds=args.seeds)
+        process_batch(BATCH, strategy=strat, n_seeds=args.seeds, write_audit_log=True)
 
 
 if __name__ == "__main__":

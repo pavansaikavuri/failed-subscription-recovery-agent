@@ -18,7 +18,14 @@ from outcome_model import (
     check_compliance_violation,
     get_effective_probability,
 )
-from pipeline import get_retry_cap, CONFIG, CONFIDENCE_THRESHOLD, AFA_THRESHOLD_INR, HARD_DECLINE_REASONS
+from pipeline import (
+    get_retry_cap,
+    CONFIG,
+    CONFIDENCE_THRESHOLD,
+    AFA_THRESHOLD_INR,
+    HARD_DECLINE_REASONS,
+    HUMAN_APPROVAL_ABOVE_PAISE,
+)
 
 load_dotenv(Path(__file__).parent / ".env")
 
@@ -262,6 +269,18 @@ def strategy_agent_rules(record: FailedPayment) -> InterventionDecision:
     4. Compliance-aligned action routing
     5. Low-confidence dispute overrides
     """
+    # Guard 0: Monetary threshold escalation
+    if record.amount_paise > HUMAN_APPROVAL_ABOVE_PAISE:
+        return InterventionDecision(
+            chosen_action="escalate_to_human",
+            reason="High-value payment requires merchant approval.",
+            confidence=1.0,
+            max_retries_left=0,
+            escalate=True,
+            decision_source="guard",
+            guard_fired="high_value_escalation",
+        )
+
     # Guard 1: Reconciliation check
     if getattr(record, "payment_state", "confirmed_failed") != "confirmed_failed":
         return InterventionDecision(
@@ -270,6 +289,8 @@ def strategy_agent_rules(record: FailedPayment) -> InterventionDecision:
             confidence=0.50,
             max_retries_left=0,
             escalate=True,
+            decision_source="guard",
+            guard_fired="reconciliation",
         )
 
     # Guard 2: Per-method retry cap
@@ -281,6 +302,8 @@ def strategy_agent_rules(record: FailedPayment) -> InterventionDecision:
             confidence=1.0,
             max_retries_left=0,
             escalate=False,
+            decision_source="guard",
+            guard_fired="retry_cap",
         )
 
     # Guard 3: Hard decline reasons
@@ -291,6 +314,8 @@ def strategy_agent_rules(record: FailedPayment) -> InterventionDecision:
             confidence=0.80,
             max_retries_left=0,
             escalate=True,
+            decision_source="guard",
+            guard_fired="hard_decline",
         )
 
     # Guard 4: Dispute / fraud check
@@ -301,6 +326,8 @@ def strategy_agent_rules(record: FailedPayment) -> InterventionDecision:
             confidence=0.55,
             max_retries_left=0,
             escalate=True,
+            decision_source="guard",
+            guard_fired="dispute_override",
         )
 
     reason = record.failure_reason
@@ -387,6 +414,18 @@ def strategy_agent_llm(
     """
     global _llm_live_count, _llm_degraded_count, _llm_cached_count
 
+    # Guard 0: Monetary threshold escalation
+    if record.amount_paise > HUMAN_APPROVAL_ABOVE_PAISE:
+        return InterventionDecision(
+            chosen_action="escalate_to_human",
+            reason="High-value payment requires merchant approval.",
+            confidence=1.0,
+            max_retries_left=0,
+            escalate=True,
+            decision_source="guard",
+            guard_fired="high_value_escalation",
+        )
+
     # Guard 1: Reconciliation check
     if getattr(record, "payment_state", "confirmed_failed") != "confirmed_failed":
         return InterventionDecision(
@@ -395,6 +434,8 @@ def strategy_agent_llm(
             confidence=0.50,
             max_retries_left=0,
             escalate=True,
+            decision_source="guard",
+            guard_fired="reconciliation",
         )
 
     # Guard 2: Per-method retry cap
@@ -406,19 +447,25 @@ def strategy_agent_llm(
             confidence=1.0,
             max_retries_left=0,
             escalate=False,
+            decision_source="guard",
+            guard_fired="retry_cap",
         )
 
     # Check cache first
     if not refresh_cache and record.id in LLM_CACHE:
         _llm_cached_count += 1
         _llm_live_count += 1
-        cached_data = LLM_CACHE[record.id]
+        cached_data = LLM_CACHE[record.id].copy()
+        cached_data.setdefault("decision_source", "llm")
+        cached_data.setdefault("guard_fired", None)
         return InterventionDecision(**cached_data)
 
     # If cache-only mode (e.g., benchmark without API key), handle cache miss via rule fallback
     if cache_only:
         _llm_degraded_count += 1
         fallback = strategy_agent_rules(record)
+        fallback.decision_source = "rule"
+        fallback.guard_fired = "llm_fallback"
         if fallback.chosen_action == "retry_now":
             fallback.chosen_action = "escalate_to_human"
             fallback.escalate = True
@@ -429,6 +476,8 @@ def strategy_agent_llm(
     # Live call with backoff
     try:
         decision = call_gemini_with_backoff(record, max_retries=5)
+        decision.decision_source = "llm"
+        decision.guard_fired = None
         _llm_live_count += 1
         LLM_CACHE[record.id] = decision.model_dump()
         save_llm_cache(LLM_CACHE)
@@ -438,6 +487,8 @@ def strategy_agent_llm(
         print(f"[{record.id}] LLM unavailable after backoff ({type(e).__name__}), executing fail-closed rule fallback", flush=True)
         _llm_degraded_count += 1
         fallback = strategy_agent_rules(record)
+        fallback.decision_source = "rule"
+        fallback.guard_fired = "llm_fallback"
 
         # Fail-closed principle: An LLM outage must never trigger an autonomous money-moving debit attempt.
         if fallback.chosen_action == "retry_now":
@@ -453,7 +504,9 @@ def strategy_agent_llm(
 # Strategy 7: Oracle (Theoretical Upper Bound)
 # -------------------------------------------------------------------------
 def strategy_oracle(
-    record: FailedPayment, penalty_paise: int = VIOLATION_PENALTY_PAISE
+    record: FailedPayment,
+    penalty_paise: int = VIOLATION_PENALTY_PAISE,
+    prob_multiplier: float = 1.0,
 ) -> InterventionDecision:
     """
     Theoretical Upper Bound: reads the hidden RECOVERY_MATRIX directly to pick
@@ -474,7 +527,7 @@ def strategy_oracle(
     best_expected_net = -float("inf")
 
     for act in all_actions:
-        prob = get_effective_probability(record, act)
+        prob = get_effective_probability(record, act, prob_multiplier=prob_multiplier)
         cost = ACTION_COSTS.get(act, 0)
         violation = check_compliance_violation(record, act, retry_cap=retry_cap)
         penalty = penalty_paise if violation else 0

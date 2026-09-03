@@ -135,12 +135,15 @@ def check_compliance_violation(
     return False
 
 
-def get_effective_probability(record: FailedPayment, action: str) -> float:
-    """Calculates recovery probability with exponential attempt decay."""
+def get_effective_probability(
+    record: FailedPayment, action: str, prob_multiplier: float = 1.0
+) -> float:
+    """Calculates recovery probability with exponential attempt decay and optional sensitivity multiplier."""
     reason_matrix = RECOVERY_MATRIX.get(record.failure_reason, {})
     base_prob = reason_matrix.get(action, 0.0)
+    scaled_prob = min(1.0, base_prob * prob_multiplier)
     decay = 0.75 ** (max(1, record.attempt_count) - 1)
-    return base_prob * decay
+    return min(1.0, scaled_prob * decay)
 
 
 def simulate_outcome(
@@ -149,12 +152,15 @@ def simulate_outcome(
     seed: int = 0,
     retry_cap: int = 3,
     penalty_amount_paise: int = VIOLATION_PENALTY_PAISE,
+    prob_multiplier: float = 1.0,
 ) -> OutcomeResult:
     """
     Simulates genuine recovery outcome using stable cryptographic hashing.
     The same (record, action, seed) guarantees identical outcome across strategies.
     """
-    effective_prob = get_effective_probability(record, action)
+    effective_prob = get_effective_probability(
+        record, action, prob_multiplier=prob_multiplier
+    )
 
     # Cryptographically stable pseudo-random draw in [0, 1)
     hash_input = f"{record.id}:{action}:{seed}".encode("utf-8")
