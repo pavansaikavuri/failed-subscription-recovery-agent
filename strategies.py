@@ -563,7 +563,8 @@ def populate_llm_cache(
             print(f"  [{i}/{len(records)}] {rec.id} -> Cached ({LLM_CACHE[rec.id].get('chosen_action')})", flush=True)
             _llm_cached_count += 1
             _llm_live_count += 1
-        elif (getattr(rec, "payment_state", "confirmed_failed") != "confirmed_failed" or
+        elif (rec.amount_paise > HUMAN_APPROVAL_ABOVE_PAISE or
+              getattr(rec, "payment_state", "confirmed_failed") != "confirmed_failed" or
               rec.attempt_count >= get_retry_cap(rec.payment_method)):
             print(f"  [{i}/{len(records)}] {rec.id} ({rec.failure_reason}) -> Resolved by deterministic guard (no LLM call)", flush=True)
             decision = strategy_agent_llm(rec, refresh_cache=False)

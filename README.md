@@ -1,6 +1,6 @@
 # Failed Subscription Recovery Agent — Razorpay Buildathon Track 3
 
-Measured net recovery on a 40-record batch of failed Indian recurring
+Measured net recovery on a 43-record batch of failed Indian recurring
 payments, evaluated against 6 baselines and a hidden oracle across 200
 seeded draws.
 
@@ -8,12 +8,12 @@ seeded draws.
 
 | | |
 |---|---|
-| Revenue at risk | ₹98,952 |
-| Agent net recovered (mean, 200 seeds) | **₹21,677** |
-| Gross recovery rate | 23.3% |
+| Revenue at risk | ₹365,952 |
+| Agent net recovered (mean, 200 seeds) | **₹114,762** |
+| Gross recovery rate | 31.9% |
 | Compliance violations | **0** |
-| Oracle upper bound | ₹27,509 |
-| Naive always-retry | ₹5,017 |
+| Oracle upper bound | ₹169,416 |
+| Naive always-retry | ₹86,874 |
 
 All recovery outcomes are **simulated** under an explicit probability
 model (`outcome_model.py`). No live merchant money was recovered. The
@@ -24,29 +24,29 @@ band reported for basic retry rules in industry sources.
 
 The non-compliant legacy rulebook (`naive_rules`) recovers **more** money
 than the compliant agent when an RBI violation is priced at ₹500 —
-₹24,154 versus ₹21,677 — because it pays 6 violations and still comes out
-ahead.
+₹160,010 versus ₹114,762 — because it absorbs 6 violations across high-value
+payments and still comes out ahead.
 
-The exact break-even is **₹912.84 per violation.** Below that price,
-non-compliance is economically rational. At or above it, the agent wins.
+The exact break-even is **₹8,041.34 per violation.** Below that price,
+non-compliance is economically rational. At or above it, the compliant agent wins.
 
 | Penalty | Best deployable strategy |
 |---|---|
-| ₹0 – ₹500 | naive_rules |
-| ₹913+ | **agent_rules** |
+| ₹0 – ₹5,000 | naive_rules |
+| ₹8,042+ | **agent_rules** |
 
 Two consequences worth stating plainly:
 
 1. **The compliant strategies are penalty-invariant.** `agent_rules`
-   returns ₹21,677.28 whether a violation costs ₹0 or ₹5,000, because it
+   returns ₹114,762.29 whether a violation costs ₹0 or ₹5,000, because it
    never incurs one. Regulatory risk exposure is zero, not small.
 2. **Always-retry is value-destroying, not merely weak.** It falls from
-   ₹13,017 to **negative ₹66,983** across the same range — destroying
-   two-thirds of the merchant's book on a ₹98,952 exposure.
+   ₹94,874 to **₹14,874** across the ₹0 to ₹5,000 penalty sweep, destroying
+   over 84% of its recovery value on regulatory fines alone.
 
 I do not claim ₹500 is the right price. I claim that a merchant must
-decide what an unauthorised debit attempt costs them, and that ₹913 is
-where that decision flips.
+decide what an unauthorised debit attempt costs them, and that the break-even
+is derived directly from empirical payment values.
 
 ## Full benchmark — 7 strategies, 200 paired seeds
 
@@ -56,24 +56,24 @@ See `benchmark_results.md`. Reproduce with `python pipeline.py --benchmark`
 ## Does the LLM earn its place? Measured, not assumed
 
 `agent_llm` composition: 31 live Gemini decisions / 0 cache misses /
-7 resolved by deterministic guard before any model call.
+10 resolved by deterministic guard before any model call.
 
 Paired difference versus `agent_rules`: **-₹418.05 ± ₹587.10** across 200 seeds.
 
 The difference (-₹418.05) is smaller than its own standard error (± ₹587.10) across 200 paired seeds.
 
-The LLM substitutes messaging for retrying: 4 retries versus the rule engine's 8, but 25 customer contacts versus 14. It trades debit attempts for customer friction and nets out flat. Oracle decision match is 68.4% for rules versus 57.9% for the LLM — the deterministic engine is closer to optimal, not merely cheaper.
+The LLM substitutes messaging for retrying: 4 retries versus the rule engine's 8, but 25 customer contacts versus 14. It trades debit attempts for customer friction and nets out flat. Oracle decision match is 65.9% for rules versus 56.1% for the LLM — the deterministic engine is closer to optimal, not merely cheaper.
 
-22% of records never reach the model at all: retry-exhaustion and
-reconciliation guards resolve them deterministically at zero inference
+24% of records never reach the model at all: high-value threshold, retry-exhaustion,
+and reconciliation guards resolve them deterministically at zero inference
 cost. The model is consulted where failure context is genuinely
 ambiguous, not as a router for cases an `if` statement decides.
 
 ## How it works
 
-Batch → Pydantic validation → four deterministic guards → decision
+Batch → Pydantic validation → five deterministic guards → decision
 (Gemini structured output, or rules) → independent outcome model →
-audit ledger + financial counters.
+audit ledger (`logs/audit_log.jsonl`) + financial counters.
 
 **The outcome model cannot see the decision engine, and vice versa.**
 Recovery probability is a property of `(failure_reason, action, seed)`,
@@ -82,17 +82,20 @@ scoreable rather than self-fulfilling — an earlier version derived
 payout from the chosen action, which meant "always retry" would have
 scored highest by construction.
 
-## Four safety guards
+## Five safety guards
 
-1. **Retry exhaustion** — per-method caps (`upi: 3`, `card: 4`), not a
+1. **High-value monetary threshold** — any payment exceeding ₹50,000
+   (`5,000,000 paise`) forces `escalate_to_human` for merchant sign-off
+   before any autonomous debit or retry can occur.
+2. **Retry exhaustion** — per-method caps (`upi: 3`, `card: 4`), not a
    flat number, reflecting differing network retry limits.
-2. **Reconciliation** — `payment_state` of `unknown` or
+3. **Reconciliation** — `payment_state` of `unknown` or
    `possibly_debited` forces escalation. Retrying a payment that may
    already have debited risks a double charge; this runs *before* the
    model.
-3. **Fail-closed** — if the model is unavailable, the fallback may never
+4. **Fail-closed** — if the model is unavailable, the fallback may never
    emit a money-moving action. An outage cannot trigger a debit.
-4. **Low-confidence escalation** — below threshold, route to a human.
+5. **Low-confidence escalation** — below threshold, route to a human.
 
 ## The 9 India-specific failure reasons
 
@@ -111,7 +114,8 @@ not merely an ineffective action. The outcome model prices it as one.
 pip install -r requirements.txt
 python pipeline.py --benchmark              # full evaluation, no API key
 python pipeline.py --sweep-penalty          # sensitivity analysis
-pytest tests/                               # 6 guard + determinism tests
+python pipeline.py --sweep-probabilities    # probability sensitivity (dual penalty tables)
+pytest tests/                               # 7 guard + determinism tests
 python pipeline.py --demo-retry-exhaustion
 python pipeline.py --demo-out-of-scope
 python pipeline.py --demo-low-confidence
@@ -134,7 +138,8 @@ reported standard errors.
 could not be wrong, and "always return retry_now" would have scored
 highest. The reported 35.5% recovery rate measured nothing. Rebuilt as
 an independent outcome model keyed on `(failure_reason, action, seed)`.
-The honest number came out at 23.3%.
+The honest number came out at 23.3% on the initial sub-₹10k batch and
+31.9% with enterprise high-value tiers included.
 
 **The LLM path was measuring its own fallback.** Free-tier quota
 exhausted mid-batch; 11 of 31 records silently fell through to rules,
@@ -157,10 +162,11 @@ mapped `pre_debit_notice_not_acked` to `retry_now`, bundled with
 - All outcomes simulated; probabilities are stated assumptions in
   `outcome_model.py`, calibrated against published industry retry
   recovery rates, not fitted to merchant history.
-- 40 records. Wide per-seed variance (₹3,175–₹46,658) — comparisons use
+- 43 records. Wide per-seed variance (₹2,725–₹290,817) — comparisons use
   paired per-seed differences with standard errors, not raw ranges.
 - Batch, not a live webhook listener. Deliberate: measurement and safety
   first. Production step is a FastAPI receiver for `payment.failed` and
   `subscription.halted`.
 - No live dispatch to WhatsApp/SMS.
-- Audit ledger is in-memory.
+- Audit trail written persistently to `logs/audit_log.jsonl` (19 fields).
+

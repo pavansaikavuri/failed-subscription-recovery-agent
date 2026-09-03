@@ -428,8 +428,15 @@ def main():
         default=1,
         help="Number of evaluation seeds to run (default: 1)",
     )
+    parser.add_argument(
+        "--penalty",
+        type=int,
+        default=500,
+        help="Compliance penalty per violation in INR (default: 500)",
+    )
 
     args = parser.parse_args()
+    penalty_paise = args.penalty * 100
 
     if args.populate_llm_cache:
         from strategies import populate_llm_cache
@@ -444,10 +451,15 @@ def main():
         run_penalty_sweep(BATCH, n_seeds=args.seeds if args.seeds > 1 else 200)
     elif args.sweep_probabilities:
         from benchmark import run_probability_sweep
-        run_probability_sweep(BATCH, n_seeds=args.seeds if args.seeds > 1 else 200)
+        run_probability_sweep(BATCH, n_seeds=args.seeds if args.seeds > 1 else 200, penalty_paise=penalty_paise)
     elif args.benchmark:
         from benchmark import run_benchmark
-        run_benchmark(BATCH, n_seeds=args.seeds if args.seeds > 1 else 200, refresh_llm_cache=args.refresh_llm_cache)
+        run_benchmark(
+            BATCH,
+            n_seeds=args.seeds if args.seeds > 1 else 200,
+            penalty_paise=penalty_paise,
+            refresh_llm_cache=args.refresh_llm_cache,
+        )
     elif args.demo_retry_exhaustion:
         print("\n=== DEMO MODE: RETRY EXHAUSTION ===")
         print("Trigger: attempt_count >= per-method retry_caps -> Force stop_and_writeoff\n")
