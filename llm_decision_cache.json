@@ -1,0 +1,162 @@
+{
+  "pay_Kx91aBcDeFgH10": {
+    "chosen_action": "send_upi_pin_nudge",
+    "reason": "UPI PIN failed on the first attempt; sending a UPI PIN nudge to the customer to prompt correct PIN entry.",
+    "confidence": 0.92,
+    "max_retries_left": 2,
+    "escalate": false,
+    "degraded_mode": false
+  },
+  "pay_Ly82bCdEfGhI21": {
+    "chosen_action": "send_upi_pin_nudge",
+    "reason": "UPI recurring debit failed due to insufficient balance. Sending a nudge via SMS/WhatsApp prompts the user to top up their account or complete the payment manually.",
+    "confidence": 0.88,
+    "max_retries_left": 2,
+    "escalate": false,
+    "degraded_mode": false
+  },
+  "pay_Mz73cDeFgHiJ32": {
+    "chosen_action": "send_card_update_link",
+    "reason": "Card expiry caused payment failure. Prompting the customer to update their card details is required before any further charge attempts.",
+    "confidence": 0.92,
+    "max_retries_left": 0,
+    "escalate": false,
+    "degraded_mode": false
+  },
+  "pay_Ob55eFgHiJkL54": {
+    "chosen_action": "retry_now",
+    "reason": "Gateway timeout is a transient network/bank issue on card processing; an immediate retry is recommended.",
+    "confidence": 0.85,
+    "max_retries_left": 2,
+    "escalate": false,
+    "degraded_mode": false
+  },
+  "pay_Lc88hIjKlMnN87": {
+    "chosen_action": "escalate_to_human",
+    "reason": "Customer disputes charge as unauthorized fraud requiring manual review.",
+    "confidence": 0.45,
+    "max_retries_left": 0,
+    "escalate": true,
+    "degraded_mode": false
+  },
+  "pay_In13mNoPqRsT32": {
+    "chosen_action": "send_card_update_link",
+    "reason": "The customer abandoned the 3DS OTP screen. Sending a card update link allows the customer to retry authentication or use a different card.",
+    "confidence": 0.88,
+    "max_retries_left": 2,
+    "escalate": false,
+    "degraded_mode": false
+  },
+  "pay_In14nOpQrStU43": {
+    "chosen_action": "resend_pre_debit_notice",
+    "reason": "RBI recurring payment guidelines require a successful pre-debit notice delivered at least 24 hours prior to execution. Resending pre-debit notice is necessary before retrying.",
+    "confidence": 0.9,
+    "max_retries_left": 2,
+    "escalate": false,
+    "degraded_mode": false
+  },
+  "pay_In15oPqStUvW54": {
+    "chosen_action": "request_mandate_reissue",
+    "reason": "The e-mandate lapsed during the reissue process after card update; triggering a mandate reissue request to obtain customer approval.",
+    "confidence": 0.88,
+    "max_retries_left": 1,
+    "escalate": false,
+    "degraded_mode": false
+  },
+  "pay_In16pQrStUvW65": {
+    "chosen_action": "send_upi_pin_nudge",
+    "reason": "Customer entered incorrect UPI PIN twice. Sending a nudge to remind the customer to verify their MPIN or re-try the payment.",
+    "confidence": 0.88,
+    "max_retries_left": 2,
+    "escalate": false,
+    "degraded_mode": false
+  },
+  "pay_In17qRsTuVwX76": {
+    "chosen_action": "resend_pre_debit_notice",
+    "reason": "Initial debit failed due to insufficient funds at month-end. Resending the mandatory 24-hour pre-debit notice allows scheduling the retry alignment with the customer's salary cycle.",
+    "confidence": 0.88,
+    "max_retries_left": 2,
+    "escalate": false,
+    "degraded_mode": false
+  },
+  "pay_In18rStUvWxY87": {
+    "chosen_action": "send_card_update_link",
+    "reason": "Card has expired; customer must update card details via update link before payment can be retried.",
+    "confidence": 0.92,
+    "max_retries_left": 0,
+    "escalate": false,
+    "degraded_mode": false
+  },
+  "pay_In19sTuVwXyZ98": {
+    "chosen_action": "retry_now",
+    "reason": "Gateway timeout caused by transient NPCI switch congestion during peak traffic on the first attempt; safe to retry.",
+    "confidence": 0.88,
+    "max_retries_left": 2,
+    "escalate": false,
+    "degraded_mode": false
+  },
+  "pay_In20tUvWxYzA09": {
+    "chosen_action": "send_card_update_link",
+    "reason": "Transaction declined by issuer due to international e-commerce being disabled on the card. Sending a card update link allows the customer to provide an alternate card or domestic payment method.",
+    "confidence": 0.85,
+    "max_retries_left": 2,
+    "escalate": false,
+    "degraded_mode": false
+  },
+  "pay_In21uVwXyZaB10": {
+    "chosen_action": "request_mandate_reissue",
+    "reason": "Mandate registration is incomplete or missing at the bank level; requesting mandate setup/reissue from the customer is required.",
+    "confidence": 0.9,
+    "max_retries_left": 2,
+    "escalate": false,
+    "degraded_mode": false
+  },
+  "pay_In22vWxYzaBC21": {
+    "chosen_action": "send_card_update_link",
+    "reason": "Card charge required Additional Factor of Authentication (AFA) which was not completed by the user. Sending a card update link enables the customer to re-authenticate or update payment credentials.",
+    "confidence": 0.85,
+    "max_retries_left": 2,
+    "escalate": false,
+    "degraded_mode": false
+  },
+  "pay_In23wXyzaBCD32": {
+    "chosen_action": "send_upi_pin_nudge",
+    "reason": "UPI auto-debit failed due to insufficient funds. Sending a UPI PIN nudge prompts the customer to ensure adequate balance and approve the payment.",
+    "confidence": 0.85,
+    "max_retries_left": 1,
+    "escalate": false,
+    "degraded_mode": false
+  },
+  "pay_In24xYzaBCDE43": {
+    "chosen_action": "send_upi_pin_nudge",
+    "reason": "UPI PIN validation failed or prompt was cancelled. Sending a nudge to the customer to complete the transaction.",
+    "confidence": 0.85,
+    "max_retries_left": 2,
+    "escalate": false,
+    "degraded_mode": false
+  },
+  "pay_In25yZaBCDEF54": {
+    "chosen_action": "send_card_update_link",
+    "reason": "Card has expired. Sending a card update link allows the customer to provide new card details for recurring billing.",
+    "confidence": 0.92,
+    "max_retries_left": 2,
+    "escalate": false,
+    "degraded_mode": false
+  },
+  "pay_In26zAbCDEFG65": {
+    "chosen_action": "retry_now",
+    "reason": "Gateway timeout caused by a temporary SBI gateway outage is transient; retrying the payment can recover the transaction.",
+    "confidence": 0.9,
+    "max_retries_left": 2,
+    "escalate": false,
+    "degraded_mode": false
+  },
+  "pay_In27aBcDEFGH76": {
+    "chosen_action": "resend_pre_debit_notice",
+    "reason": "Pre-debit notice was not acknowledged due to DND SMS delivery failure. Resending notice via alternate channels (WhatsApp/Email) is required by RBI recurring payment guidelines before attempting debit.",
+    "confidence": 0.92,
+    "max_retries_left": 3,
+    "escalate": false,
+    "degraded_mode": false
+  }
+}

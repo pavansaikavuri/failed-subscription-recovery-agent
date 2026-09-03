@@ -1,7 +1,16 @@
+# Environment and secrets
 .env
+.env.*
+!.env.example
+
+# Virtual environments & caches
 .venv/
 __pycache__/
 *.pyc
 logs/
 .DS_Store
+
+# Hidden docs / draft artifacts (add to git later)
 README.md
+pitch_script.md
+benchmark_results.md

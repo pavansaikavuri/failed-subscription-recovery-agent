@@ -148,6 +148,7 @@ def simulate_outcome(
     action: str,
     seed: int = 0,
     retry_cap: int = 3,
+    penalty_amount_paise: int = VIOLATION_PENALTY_PAISE,
 ) -> OutcomeResult:
     """
     Simulates genuine recovery outcome using stable cryptographic hashing.
@@ -169,7 +170,7 @@ def simulate_outcome(
 
     # Evaluate compliance violation
     violation = check_compliance_violation(record, action, retry_cap=retry_cap)
-    penalty_paise = VIOLATION_PENALTY_PAISE if violation else 0
+    penalty_paise = penalty_amount_paise if violation else 0
     cost_paise = ACTION_COSTS.get(action, 0)
 
     contacted = action in [

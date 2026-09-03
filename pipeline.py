@@ -6,14 +6,13 @@ import argparse
 from pathlib import Path
 from datetime import datetime, timedelta
 from collections import Counter
-from typing import Dict, List, Tuple, Optional
+from typing import Dict, List, Tuple, Optional, Callable
 from dotenv import load_dotenv
 import yaml
 from pydantic import BaseModel
 
 # Suppress SDK deprecation warning for clean console output
 warnings.filterwarnings("ignore", category=FutureWarning)
-import google.generativeai as genai
 
 # Ensure utf-8 encoding for console output on Windows
 if sys.platform == "win32" and hasattr(sys.stdout, "reconfigure"):
@@ -67,7 +66,6 @@ VALID_FAILURE_REASONS = {
 
 # In-memory idempotency ledger: (record_id, action) -> datetime
 IDEMPOTENCY_LEDGER: Dict[Tuple[str, str], datetime] = {}
-_gemini_configured = False
 
 
 class BatchResult(BaseModel):
@@ -93,190 +91,9 @@ def get_retry_cap(payment_method: str) -> int:
     return RETRY_CAPS.get(payment_method.lower(), RETRY_CAPS.get("default", 3))
 
 
-def setup_gemini():
-    global _gemini_configured
-    if not _gemini_configured:
-        api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
-        if not api_key:
-            raise ValueError("GEMINI_API_KEY is not set in environment or .env")
-        genai.configure(api_key=api_key)
-        _gemini_configured = True
-
-
-def _rule_based_fallback(record: FailedPayment) -> InterventionDecision:
-    retry_cap = get_retry_cap(record.payment_method)
-
-    # 1. Retry Exhaustion check (attempt_count >= per-method cap)
-    if record.attempt_count >= retry_cap:
-        return InterventionDecision(
-            chosen_action="stop_and_writeoff",
-            reason=f"Retry limit reached for {record.payment_method} (attempt_count >= {retry_cap})",
-            confidence=1.0,
-            max_retries_left=0,
-            escalate=False,
-        )
-
-    # 2. Hard decline reasons (never retry)
-    if record.failure_reason in HARD_DECLINE_REASONS:
-        return InterventionDecision(
-            chosen_action="escalate_to_human",
-            reason=f"Hard decline reason '{record.failure_reason}'; non-retryable per policy.",
-            confidence=0.80,
-            max_retries_left=0,
-            escalate=True,
-        )
-
-    # 3. Customer dispute / fraud detection
-    if "dispute" in record.notes.lower() or "fraud" in record.notes.lower():
-        return InterventionDecision(
-            chosen_action="escalate_to_human",
-            reason="Customer dispute or potential fraud suspected; requires manual review.",
-            confidence=0.55,
-            max_retries_left=0,
-            escalate=True,
-        )
-
-    reason = record.failure_reason
-
-    if reason == "upi_pin_failure":
-        return InterventionDecision(
-            chosen_action="send_upi_pin_nudge",
-            reason="Customer failed UPI PIN entry; nudge sent to re-enter PIN.",
-            confidence=0.85,
-            max_retries_left=max(0, retry_cap - record.attempt_count),
-            escalate=False,
-        )
-    elif reason == "insufficient_funds":
-        return InterventionDecision(
-            chosen_action="retry_now",
-            reason="Insufficient funds; auto-debit retry scheduled.",
-            confidence=0.75,
-            max_retries_left=max(0, retry_cap - record.attempt_count),
-            escalate=False,
-        )
-    elif reason == "card_expired":
-        return InterventionDecision(
-            chosen_action="send_card_update_link",
-            reason="Card expired; secure update link dispatched to customer.",
-            confidence=0.90,
-            max_retries_left=max(0, retry_cap - record.attempt_count),
-            escalate=False,
-        )
-    elif reason == "mandate_not_registered":
-        return InterventionDecision(
-            chosen_action="request_mandate_reissue",
-            reason="Mandate not registered; mandate reissue requested.",
-            confidence=0.80,
-            max_retries_left=max(0, retry_cap - record.attempt_count),
-            escalate=False,
-        )
-    elif reason == "pre_debit_notice_not_acked":
-        return InterventionDecision(
-            chosen_action="resend_pre_debit_notice",
-            reason="Pre-debit notice unacknowledged; 24h pre-debit notice re-queued per RBI rules.",
-            confidence=0.85,
-            max_retries_left=max(0, retry_cap - record.attempt_count),
-            escalate=False,
-        )
-    elif reason == "afa_required_not_completed":
-        return InterventionDecision(
-            chosen_action="escalate_to_human",
-            reason=f"AFA challenge abandoned; requires customer authentication under RBI threshold (₹{AFA_THRESHOLD_INR:,.0f}).",
-            confidence=0.65,
-            max_retries_left=0,
-            escalate=True,
-        )
-    elif reason == "gateway_timeout":
-        return InterventionDecision(
-            chosen_action="retry_now",
-            reason="Transient gateway timeout; network retry scheduled.",
-            confidence=0.85,
-            max_retries_left=max(0, retry_cap - record.attempt_count),
-            escalate=False,
-        )
-    else:
-        return InterventionDecision(
-            chosen_action="escalate_to_human",
-            reason="Complex or unclassified failure reason; escalated to manual review.",
-            confidence=0.50,
-            max_retries_left=0,
-            escalate=True,
-        )
-
-
-def classify_and_decide(record: FailedPayment, use_llm: bool = True) -> InterventionDecision:
-    # 0. Payment State Reconciliation Check (BEFORE LLM and before rules)
-    payment_state = getattr(record, "payment_state", "confirmed_failed")
-    if payment_state != "confirmed_failed":
-        return InterventionDecision(
-            chosen_action="escalate_to_human",
-            reason="Reconcile before acting: payment state ambiguous, retry risks double debit.",
-            confidence=0.50,
-            max_retries_left=0,
-            escalate=True,
-        )
-
-    # 1. Retry Exhaustion check
-    retry_cap = get_retry_cap(record.payment_method)
-    if record.attempt_count >= retry_cap:
-        return InterventionDecision(
-            chosen_action="stop_and_writeoff",
-            reason=f"Retry limit reached for {record.payment_method} (attempt_count >= {retry_cap})",
-            confidence=1.0,
-            max_retries_left=0,
-            escalate=False,
-        )
-
-    if not use_llm:
-        return _rule_based_fallback(record)
-
-    try:
-        setup_gemini()
-        system_prompt = (
-            "You are a Razorpay revenue recovery specialist for Indian payments. "
-            "Choose the single best bounded intervention. "
-            f"If the failure cause is ambiguous, disputed as fraud, or requires manual human discretion, return confidence < {CONFIDENCE_THRESHOLD:.2f}. "
-            "Reply with ONLY valid JSON strictly matching the requested schema."
-        )
-        user_message = (
-            f"failure_reason: {record.failure_reason}\n"
-            f"amount_paise: {record.amount_paise}\n"
-            f"attempt_count: {record.attempt_count}\n"
-            f"payment_method: {record.payment_method}\n"
-            f"customer_ltv_paise: {record.customer_ltv_paise}\n"
-            f"notes: {record.notes}"
-        )
-
-        model = genai.GenerativeModel(
-            model_name="gemini-3.6-flash",
-            system_instruction=system_prompt,
-            generation_config={
-                "response_mime_type": "application/json",
-                "response_schema": InterventionDecision,
-                "temperature": 0.2,
-            },
-        )
-        response = model.generate_content(user_message)
-        data = json.loads(response.text)
-        return InterventionDecision(**data)
-
-    except Exception as e:
-        print(f"LLM failed, using rule fallback. Real error: {type(e).__name__}: {e}")
-        fallback_decision = _rule_based_fallback(record)
-
-        # Fail-closed principle: An LLM outage must never be able to trigger an autonomous money-moving debit attempt.
-        if fallback_decision.chosen_action == "retry_now":
-            print("DEGRADED: model unavailable, refusing autonomous retry")
-            fallback_decision.chosen_action = "escalate_to_human"
-            fallback_decision.escalate = True
-            fallback_decision.degraded_mode = True
-            fallback_decision.reason = "Degraded mode: LLM unavailable, autonomous retry refused."
-
-        return fallback_decision
-
-
 def process_batch(
     batch: List[dict],
+    strategy: Optional[Callable[[FailedPayment], InterventionDecision]] = None,
     use_llm: bool = True,
     seed: int = 0,
     n_seeds: int = 1,
@@ -284,16 +101,25 @@ def process_batch(
     clear_ledger: bool = True,
 ) -> BatchResult:
     """
-    Processes a batch of failed payments, executing decisions and scoring outcomes
-    against the independent outcome model.
+    Universal batch execution engine:
+    1. Rejects out-of-scope / malformed failure reasons gracefully
+    2. Enforces idempotency ledger deduplication
+    3. Calls strategy(payment) to obtain decision
+    4. Simulates genuine recovery outcome via outcome_model
+    5. Returns structured accounting and audit records
     """
     global IDEMPOTENCY_LEDGER
     if clear_ledger:
         IDEMPOTENCY_LEDGER = {}
 
+    # Import strategies lazily if not provided
+    if strategy is None:
+        from strategies import strategy_agent_llm, strategy_agent_rules
+        strategy = strategy_agent_llm if use_llm else strategy_agent_rules
+
     if n_seeds > 1:
         results = [
-            process_batch(batch, use_llm=use_llm, seed=s, n_seeds=1, verbose=False, clear_ledger=True)
+            process_batch(batch, strategy=strategy, use_llm=use_llm, seed=s, n_seeds=1, verbose=False, clear_ledger=True)
             for s in range(n_seeds)
         ]
         mean_net = sum(r.net_recovered_paise for r in results) / n_seeds
@@ -334,7 +160,7 @@ def process_batch(
 
         total_at_risk_paise += amount_paise
 
-        # 1. Out-of-scope / Malformed failure_reason check
+        # 1. Universal Out-of-scope / Malformed failure_reason check
         if raw_reason not in VALID_FAILURE_REASONS:
             if verbose:
                 print(f"[{record_id}] REJECTED – unknown failure_reason: '{raw_reason}'")
@@ -362,16 +188,9 @@ def process_batch(
             continue
 
         payment = FailedPayment(**row) if isinstance(row, dict) else row
-        decision = classify_and_decide(payment, use_llm=use_llm)
-
-        # 2. Low Confidence check (< CONFIDENCE_THRESHOLD from config)
-        if decision.confidence < CONFIDENCE_THRESHOLD and not decision.escalate:
-            if verbose:
-                print(f"[{payment.id}] Overridden due to low confidence (conf={decision.confidence:.2f}) → escalate_to_human")
-            decision.chosen_action = "escalate_to_human"
-            decision.escalate = True
-            decision.reason = f"Low confidence override ({decision.confidence:.2f}): {decision.reason}"
-
+        
+        # 2. Delegate decision purely to the strategy function
+        decision = strategy(payment)
         action = decision.chosen_action
         action_counts[action] += 1
 
@@ -380,7 +199,7 @@ def process_batch(
         if action == "stop_and_writeoff":
             written_off_count += 1
 
-        # 3. Idempotency ledger check (dedupe.ttl_hours window)
+        # 3. Universal Idempotency ledger check (dedupe.ttl_hours window)
         ledger_key = (payment.id, action)
         if ledger_key in IDEMPOTENCY_LEDGER:
             last_executed = IDEMPOTENCY_LEDGER[ledger_key]
@@ -405,7 +224,7 @@ def process_batch(
         # Record into idempotency ledger
         IDEMPOTENCY_LEDGER[ledger_key] = now
 
-        # 4. Simulate genuine outcome via independent outcome model
+        # 4. Universal Outcome Simulation via independent outcome model
         retry_cap = get_retry_cap(payment.payment_method)
         outcome: OutcomeResult = simulate_outcome(
             payment, action, seed=seed, retry_cap=retry_cap
@@ -509,9 +328,29 @@ def main():
         help="Run entirely via deterministic rule engine without calling LLM",
     )
     parser.add_argument(
+        "--benchmark",
+        action="store_true",
+        help="Run full 7-strategy multi-seed benchmark against Oracle upper bound",
+    )
+    parser.add_argument(
         "--demo-retry-exhaustion",
         action="store_true",
-        help="Demo retry exhaustion failure mode (attempt_count > per-method cap)",
+        help="Demo retry exhaustion failure mode (attempt_count >= per-method cap)",
+    )
+    parser.add_argument(
+        "--populate-llm-cache",
+        action="store_true",
+        help="Call Gemini API with exponential backoff to populate the local LLM decision cache",
+    )
+    parser.add_argument(
+        "--refresh-llm-cache",
+        action="store_true",
+        help="Force regeneration of cached LLM decisions by calling Gemini API",
+    )
+    parser.add_argument(
+        "--sweep-penalty",
+        action="store_true",
+        help="Run sensitivity sweep across multiple compliance penalty levels",
     )
     parser.add_argument(
         "--demo-out-of-scope",
@@ -532,7 +371,21 @@ def main():
 
     args = parser.parse_args()
 
-    if args.demo_retry_exhaustion:
+    if args.populate_llm_cache:
+        from strategies import populate_llm_cache
+        valid_records = [
+            FailedPayment(**r) if isinstance(r, dict) else r
+            for r in BATCH
+            if (r.get("failure_reason", "") if isinstance(r, dict) else r.failure_reason) in VALID_FAILURE_REASONS
+        ]
+        populate_llm_cache(valid_records, refresh=args.refresh_llm_cache)
+    elif args.sweep_penalty:
+        from benchmark import run_penalty_sweep
+        run_penalty_sweep(BATCH, n_seeds=args.seeds if args.seeds > 1 else 200)
+    elif args.benchmark:
+        from benchmark import run_benchmark
+        run_benchmark(BATCH, n_seeds=args.seeds if args.seeds > 1 else 200, refresh_llm_cache=args.refresh_llm_cache)
+    elif args.demo_retry_exhaustion:
         print("\n=== DEMO MODE: RETRY EXHAUSTION ===")
         print("Trigger: attempt_count >= per-method retry_caps -> Force stop_and_writeoff\n")
         demo_batch = [
@@ -541,7 +394,8 @@ def main():
                 row.get("payment_method", "default") if isinstance(row, dict) else row.payment_method
             )
         ]
-        process_batch(demo_batch, use_llm=False)
+        from strategies import strategy_agent_rules
+        process_batch(demo_batch, strategy=strategy_agent_rules)
     elif args.demo_out_of_scope:
         print("\n=== DEMO MODE: OUT OF SCOPE / MALFORMED ===")
         print("Trigger: failure_reason not in 9 valid Indian reasons\n")
@@ -549,7 +403,8 @@ def main():
             row for row in BATCH
             if (row.get("failure_reason", "") if isinstance(row, dict) else row.failure_reason) not in VALID_FAILURE_REASONS
         ]
-        process_batch(demo_batch, use_llm=False)
+        from strategies import strategy_agent_rules
+        process_batch(demo_batch, strategy=strategy_agent_rules)
     elif args.demo_low_confidence:
         print("\n=== DEMO MODE: LOW CONFIDENCE ESCALATION ===")
         print(f"Trigger: confidence < {CONFIDENCE_THRESHOLD:.2f} -> Force escalate_to_human\n")
@@ -559,10 +414,14 @@ def main():
         ]
         if not demo_batch:
             demo_batch = [BATCH[7]]
-        process_batch(demo_batch, use_llm=False)
+        from strategies import strategy_agent_rules
+        process_batch(demo_batch, strategy=strategy_agent_rules)
     else:
-        use_llm = not args.rules_only
-        process_batch(BATCH, use_llm=use_llm, n_seeds=args.seeds)
+        from strategies import strategy_agent_llm, strategy_agent_rules
+        strat = strategy_agent_rules if args.rules_only else (
+            lambda rec: strategy_agent_llm(rec, refresh_cache=args.refresh_llm_cache)
+        )
+        process_batch(BATCH, strategy=strat, n_seeds=args.seeds)
 
 
 if __name__ == "__main__":
