@@ -1,6 +1,6 @@
 # Benchmark Results – Recovery Agent Multi-Strategy Evaluation
 
-**Timestamp:** 2026-09-03 14:30:50 | **Batch Size:** 40 records | **Seeds:** 200 | **Total at Risk:** ₹98,952.00 | **Penalty:** ₹500
+**Timestamp:** 2026-09-03 14:42:51 | **Batch Size:** 40 records | **Seeds:** 200 | **Total at Risk:** ₹98,952.00 | **Penalty:** ₹500
 
 `agent_llm composition: 31 live LLM / 0 rule fallback (cache miss) / 7 deterministic guard`
 
@@ -19,12 +19,14 @@
 
 **Exact Break-Even Penalty:** ₹912.84 per violation (agent_rules overtakes naive_rules)
 
-| Penalty (₹) | **no_action** | **always_retry** | **message_only** | **naive_rules** | **agent_rules** | **agent_llm** | **oracle** | Top Strategy |
+| Penalty (₹) | **no_action** | **always_retry** | **message_only** | **naive_rules** | **agent_rules** | **agent_llm** | **oracle** | Best Deployable Strategy |
 | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| ₹0 | ₹0.00 | ₹13,016.53 | ₹16,993.97 | ₹27,154.31 | ₹21,677.28 | ₹21,259.24 | ₹28,159.94 | **oracle** |
-| ₹250 | ₹0.00 | ₹9,016.53 | ₹16,993.97 | ₹25,654.31 | ₹21,677.28 | ₹21,259.24 | ₹27,759.45 | **oracle** |
-| ₹500 | ₹0.00 | ₹5,016.53 | ₹16,993.97 | ₹24,154.31 | ₹21,677.28 | ₹21,259.24 | ₹27,509.45 | **oracle** |
-| ₹913 | ₹0.00 | ₹-1,591.46 | ₹16,993.97 | ₹21,676.31 | ₹21,677.28 | ₹21,259.24 | ₹27,096.45 | **oracle** |
-| ₹1,500 | ₹0.00 | ₹-10,983.47 | ₹16,993.97 | ₹18,154.31 | ₹21,677.28 | ₹21,259.24 | ₹26,110.62 | **oracle** |
-| ₹3,000 | ₹0.00 | ₹-34,983.46 | ₹16,993.97 | ₹9,154.32 | ₹21,677.28 | ₹21,259.24 | ₹26,110.62 | **oracle** |
-| ₹5,000 | ₹0.00 | ₹-66,983.46 | ₹16,993.97 | ₹-2,845.68 | ₹21,677.28 | ₹21,259.24 | ₹26,110.62 | **oracle** |
+| ₹0 | ₹0.00 | ₹13,016.53 | ₹16,993.97 | ₹27,154.31 | ₹21,677.28 | ₹21,259.24 | ₹28,159.94 | **naive_rules** |
+| ₹250 | ₹0.00 | ₹9,016.53 | ₹16,993.97 | ₹25,654.31 | ₹21,677.28 | ₹21,259.24 | ₹27,759.45 | **naive_rules** |
+| ₹500 | ₹0.00 | ₹5,016.53 | ₹16,993.97 | ₹24,154.31 | ₹21,677.28 | ₹21,259.24 | ₹27,509.45 | **naive_rules** |
+| ₹913 | ₹0.00 | ₹-1,591.46 | ₹16,993.97 | ₹21,676.31 | ₹21,677.28 | ₹21,259.24 | ₹27,096.45 | **agent_rules** |
+| ₹1,500 | ₹0.00 | ₹-10,983.47 | ₹16,993.97 | ₹18,154.31 | ₹21,677.28 | ₹21,259.24 | ₹26,110.62 | **agent_rules** |
+| ₹3,000 | ₹0.00 | ₹-34,983.46 | ₹16,993.97 | ₹9,154.32 | ₹21,677.28 | ₹21,259.24 | ₹26,110.62 | **agent_rules** |
+| ₹5,000 | ₹0.00 | ₹-66,983.46 | ₹16,993.97 | ₹-2,845.68 | ₹21,677.28 | ₹21,259.24 | ₹26,110.62 | **agent_rules** |
+
+*Note: Oracle represents the theoretical upper bound reading the hidden recovery matrix directly and is excluded from 'Best Deployable Strategy'.*

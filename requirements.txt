@@ -2,3 +2,4 @@ pydantic
 python-dotenv
 google-generativeai
 pyyaml
+pytest

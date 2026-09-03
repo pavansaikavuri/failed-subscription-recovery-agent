@@ -314,8 +314,9 @@ def run_penalty_sweep(
         print(f"Exact Break-Even Penalty: ₹{breakeven_penalty_inr:,.2f}")
         print(f"(At penalties >= ₹{breakeven_penalty_inr:,.2f}, agent_rules outperforms naive_rules net of compliance risk)\n")
 
-    # Render Markdown Table for Penalty Sweep
-    header_cols = ["Penalty (₹)"] + [f"**{name}**" for name in strategy_names] + ["Top Strategy"]
+    # Render Markdown Table for Penalty Sweep (Oracle is reference only, not a deployable strategy)
+    deployable_names = [name for name in strategy_names if name != "oracle"]
+    header_cols = ["Penalty (₹)"] + [f"**{name}**" for name in strategy_names] + ["Best Deployable Strategy"]
     sweep_lines = [
         "## Compliance Penalty Sensitivity\n",
         f"**Exact Break-Even Penalty:** ₹{breakeven_penalty_inr:,.2f} per violation (agent_rules overtakes naive_rules)\n",
@@ -325,16 +326,18 @@ def run_penalty_sweep(
 
     for p_inr in penalties_inr:
         row_vals = [f"₹{p_inr:,}"]
-        best_strat = ""
+        best_deployable = ""
         best_val = -float("inf")
         for name in strategy_names:
             val = sweep_results[p_inr].get(name, 0.0)
             row_vals.append(f"₹{val:,.2f}")
-            if val > best_val:
+            if name in deployable_names and val > best_val:
                 best_val = val
-                best_strat = name
-        row_vals.append(f"**{best_strat}**")
+                best_deployable = name
+        row_vals.append(f"**{best_deployable}**")
         sweep_lines.append("| " + " | ".join(row_vals) + " |")
+
+    sweep_lines.append("\n*Note: Oracle represents the theoretical upper bound reading the hidden recovery matrix directly and is excluded from 'Best Deployable Strategy'.*")
 
     sweep_table = "\n".join(sweep_lines)
     if verbose:
