@@ -1,0 +1,28 @@
+{
+  "entity": "event",
+  "account_id": "acc_dunning_demo_01",
+  "event": "payment.failed",
+  "contains": ["payment"],
+  "event_id": "evt_dunning_sub_upi_att3",
+  "created_at": 1725533610,
+  "payload": {
+    "payment": {
+      "entity": {
+        "id": "pay_dunning_upi_03",
+        "subscription_id": "sub_dunning_upi_demo_01",
+        "amount": 19900,
+        "currency": "INR",
+        "status": "failed",
+        "method": "upi",
+        "error_code": "BAD_REQUEST_ERROR",
+        "error_description": "Payment failed due to insufficient funds in customer bank account",
+        "error_reason": "insufficient_funds",
+        "customer_id": "cust_dunning_01",
+        "notes": {
+          "customer_ltv": 1500000,
+          "subscription_plan": "starter_recurring"
+        }
+      }
+    }
+  }
+}

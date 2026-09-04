@@ -193,16 +193,31 @@ mapped `pre_debit_notice_not_acked` to `retry_now`, bundled with
 `gateway_timeout`. That is an RBI violation. Split out and routed to
 `resend_pre_debit_notice`.
 
+## Live Webhook Ingestion & Multi-Attempt Dunning Continuity
+
+In addition to batch simulation, the system provides a production-grade FastAPI receiver (`app.py`) with:
+- **HMAC-SHA256 Signature Verification** (`X-Razorpay-Signature`).
+- **Idempotency Ledger**: Deduplication of duplicate webhook events within `dedupe.ttl_hours` (72h).
+- **Multi-Attempt State Continuity**: SQLite ledger tracking sequential failures per `subscription_id` within `dedupe.dunning_window_hours` (336h = 14 days). Rather than evaluating each webhook in isolation, accumulated attempt counts feed into Guard 2 (per-method retry caps).
+- **Public Subscription Audit Endpoint**: `GET /subscriptions/{subscription_id}` exposes the complete chronological sequence of webhook events and recovery actions taken during the dunning cycle.
+- **Verified Error Normalization** (`error_normalizer.py`): Maps verified Razorpay public gateway codes (`card_declined`, `payment_declined`, `card_expired`, `payment_timed_out`, `gateway_technical_error`, `bank_technical_error`, `payment_risk_check_failed`, `GATEWAY_ERROR`) into the internal 9-reason taxonomy. Unknown or unverified codes are strictly rejected out-of-scope to deterministic write-off by design rather than guessed.
+
+To demonstrate multi-attempt state continuity and accumulated retry cap exhaustion:
+```bash
+python pipeline.py --replay-dunning
+```
+Output:
+`Attempt 1: retry_now` → `Attempt 2: retry_now` → `Attempt 3: stop_and_writeoff [GUARD TRIGGERED: retry_cap]`.
+
 ## Limitations
 
 - All outcomes simulated; probabilities are stated assumptions in
   `outcome_model.py`, calibrated against published industry retry
   recovery rates, not fitted to merchant history.
-- 40 records. Wide per-seed variance (₹3,175–₹46,658) — comparisons use
+- 40 records. Wide per-seed variance — comparisons use
   paired per-seed differences with standard errors, not raw ranges.
-- Batch, not a live webhook listener. Deliberate: measurement and safety
-  first. Production step is a FastAPI receiver for `payment.failed` and
-  `subscription.halted`.
-- No live dispatch to WhatsApp/SMS.
+- Production step provides FastAPI receiver for `payment.failed` with SQLite state continuity and idempotency.
+- No live external dispatch to WhatsApp/SMS (mocked to communication logs).
 - Audit trail written persistently to `audit_log.jsonl` with escalations
   exported to `escalations.json`.
+

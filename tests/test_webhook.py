@@ -158,3 +158,141 @@ def test_webhook_decision_and_batch_decision_produce_identical_action():
     assert webhook_action == batch_decision.chosen_action, (
         f"Mismatch between ingestion paths: webhook got '{webhook_action}', batch got '{batch_decision.chosen_action}'"
     )
+
+
+def test_multi_attempt_dunning_continuity_exhausts_upi_cap():
+    """
+    Webhook state continuity: 3 successive payment failures for the same subscription_id
+    progress through retry_now -> retry_now -> stop_and_writeoff (Guard 2: retry_cap).
+    """
+    sub_id = f"sub_dunning_test_{int(datetime.now().timestamp() * 1000)}"
+
+    # Attempt 1
+    p1 = {
+        "event": "payment.failed",
+        "event_id": f"evt_{sub_id}_1",
+        "payload": {
+            "payment": {
+                "entity": {
+                    "id": f"pay_{sub_id}_1",
+                    "subscription_id": sub_id,
+                    "amount": 19900,
+                    "method": "upi",
+                    "error_reason": "insufficient_funds",
+                }
+            }
+        },
+    }
+    b1 = json.dumps(p1).encode("utf-8")
+    r1 = client.post("/webhooks/razorpay", content=b1, headers={"X-Razorpay-Signature": _sign(b1)})
+    assert r1.status_code == 200
+    d1 = r1.json()
+    assert d1["attempt_number"] == 1
+    assert d1["decision"]["chosen_action"] == "retry_now"
+
+    # Attempt 2
+    p2 = {
+        "event": "payment.failed",
+        "event_id": f"evt_{sub_id}_2",
+        "payload": {
+            "payment": {
+                "entity": {
+                    "id": f"pay_{sub_id}_2",
+                    "subscription_id": sub_id,
+                    "amount": 19900,
+                    "method": "upi",
+                    "error_reason": "insufficient_funds",
+                }
+            }
+        },
+    }
+    b2 = json.dumps(p2).encode("utf-8")
+    r2 = client.post("/webhooks/razorpay", content=b2, headers={"X-Razorpay-Signature": _sign(b2)})
+    assert r2.status_code == 200
+    d2 = r2.json()
+    assert d2["attempt_number"] == 2
+    assert d2["decision"]["chosen_action"] == "retry_now"
+
+    # Attempt 3 (UPI Cap is 3 -> attempt_count >= 3 triggers Guard 2)
+    p3 = {
+        "event": "payment.failed",
+        "event_id": f"evt_{sub_id}_3",
+        "payload": {
+            "payment": {
+                "entity": {
+                    "id": f"pay_{sub_id}_3",
+                    "subscription_id": sub_id,
+                    "amount": 19900,
+                    "method": "upi",
+                    "error_reason": "insufficient_funds",
+                }
+            }
+        },
+    }
+    b3 = json.dumps(p3).encode("utf-8")
+    r3 = client.post("/webhooks/razorpay", content=b3, headers={"X-Razorpay-Signature": _sign(b3)})
+    assert r3.status_code == 200
+    d3 = r3.json()
+    assert d3["attempt_number"] == 3
+    assert d3["decision"]["chosen_action"] == "stop_and_writeoff"
+    assert d3["decision"]["guard_triggered"] == "retry_cap"
+
+
+def test_subscription_endpoint_returns_full_history():
+    """GET /subscriptions/{subscription_id} returns all prior events and decisions in chronological order."""
+    sub_id = f"sub_hist_test_{int(datetime.now().timestamp() * 1000)}"
+
+    for att in (1, 2):
+        payload = {
+            "event": "payment.failed",
+            "event_id": f"evt_{sub_id}_{att}",
+            "payload": {
+                "payment": {
+                    "entity": {
+                        "id": f"pay_{sub_id}_{att}",
+                        "subscription_id": sub_id,
+                        "amount": 19900,
+                        "method": "upi",
+                        "error_reason": "insufficient_funds",
+                    }
+                }
+            },
+        }
+        b = json.dumps(payload).encode("utf-8")
+        client.post("/webhooks/razorpay", content=b, headers={"X-Razorpay-Signature": _sign(b)})
+
+    resp = client.get(f"/subscriptions/{sub_id}")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["subscription_id"] == sub_id
+    assert data["total_attempts"] == 2
+    assert len(data["history"]) == 2
+    assert data["history"][0]["attempt_number"] == 1
+    assert data["history"][1]["attempt_number"] == 2
+
+
+def test_unmapped_error_routes_to_out_of_scope_writeoff():
+    """Unmapped or constructed error codes are rejected out of scope and written off by design."""
+    sub_id = f"sub_oos_{int(datetime.now().timestamp() * 1000)}"
+    payload = {
+        "event": "payment.failed",
+        "event_id": f"evt_{sub_id}_oos",
+        "payload": {
+            "payment": {
+                "entity": {
+                    "id": f"pay_{sub_id}_oos",
+                    "subscription_id": sub_id,
+                    "amount": 29900,
+                    "method": "card",
+                    "error_reason": "BAD_REQUEST_PAYMENT_PRE_DEBIT_NOTICE_NOT_ACKED",
+                }
+            }
+        },
+    }
+    b = json.dumps(payload).encode("utf-8")
+    resp = client.post("/webhooks/razorpay", content=b, headers={"X-Razorpay-Signature": _sign(b)})
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["decision"]["chosen_action"] == "stop_and_writeoff"
+    assert data["decision"]["guard_triggered"] == "out_of_scope"
+

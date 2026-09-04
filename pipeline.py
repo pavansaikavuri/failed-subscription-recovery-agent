@@ -52,6 +52,7 @@ RETRYABLE_REASONS = set(RETRY_POLICY.get("retryable_reasons", []))
 CONFIDENCE_THRESHOLD = float(CONFIG.get("confidence_threshold", 0.60))
 AFA_THRESHOLD_INR = float(CONFIG.get("afa_thresholds_inr", {}).get("e_mandate", 15000))
 DEDUPE_TTL_HOURS = float(CONFIG.get("dedupe", {}).get("ttl_hours", 72))
+DUNNING_WINDOW_HOURS = float(CONFIG.get("dedupe", {}).get("dunning_window_hours", 336))
 ESCALATION_POLICY = CONFIG.get("escalation_policy", {})
 ESCALATION_COST_PAISE: int = int(ESCALATION_POLICY.get("escalation_cost_paise", 15000))
 LTV_ESCALATION_THRESHOLD: int = int(ESCALATION_POLICY.get("ltv_escalation_threshold", 2000000))
@@ -126,9 +127,20 @@ def classify_and_decide(
 ) -> InterventionDecision:
     """
     Unified entry point for recovery decisions across both batch and webhook ingestion paths.
-    Enforces identical 4 deterministic guards and strategy decision routing.
+    Enforces identical deterministic guards, out-of-scope rejection, and strategy decision routing.
     """
     print_policy_version_once()
+    if payment.failure_reason not in VALID_FAILURE_REASONS:
+        return InterventionDecision(
+            chosen_action="stop_and_writeoff",
+            reason=f"Rejected out of scope: '{payment.failure_reason}' is not a supported Indian failure reason.",
+            confidence=1.0,
+            max_retries_left=0,
+            escalate=False,
+            decision_source="guard",
+            guard_triggered="out_of_scope",
+            model_version="guard-v1",
+        )
     if strategy is None:
         from strategies import strategy_agent_llm, strategy_agent_rules
         strategy = strategy_agent_llm if use_llm else strategy_agent_rules
@@ -231,6 +243,88 @@ def replay_webhooks(
     for r in results:
         print(f"{r['file']:<42} | {r['event_id']:<22} | {r['sig_valid']:<14} | {r['run1_action']:<25} | {r['run2_dup']}")
     print("-" * 128 + "\n")
+
+
+def replay_dunning_campaign(
+    fixtures_dir: str = "fixtures/webhooks",
+    secret: Optional[str] = None,
+):
+    """
+    Replays the 3 sequential dunning webhook fixtures demonstrating multi-attempt
+    state continuity across the 14-day dunning window:
+      Attempt 1: retry_now (retries left = 2)
+      Attempt 2: retry_now (retries left = 1)
+      Attempt 3: stop_and_writeoff (Guard 2: UPI retry_cap exhausted from accumulated state)
+    Then queries GET /subscriptions/{subscription_id} to display full ledger progression.
+    """
+    import hmac
+    import hashlib
+    from starlette.testclient import TestClient
+    from app import app, DB_PATH
+
+    fixtures_path = Path(fixtures_dir)
+    secret = secret or os.getenv("RAZORPAY_WEBHOOK_SECRET", "test_webhook_secret_razorpay_2026")
+    files = [
+        fixtures_path / "13_subscription_dunning_attempt_1.json",
+        fixtures_path / "14_subscription_dunning_attempt_2.json",
+        fixtures_path / "15_subscription_dunning_attempt_3.json",
+    ]
+
+    print("\n" + "=" * 95)
+    print("       RAZORPAY MULTI-ATTEMPT DUNNING WEBHOOK REPLAY HARNESS")
+    print(f"       State Continuity & Accumulated Retry Cap Enforcement (Window: {int(DUNNING_WINDOW_HOURS)}h / 14 days)")
+    print("=" * 95 + "\n")
+
+    client = TestClient(app)
+    sub_id = None
+
+    for idx, fpath in enumerate(files, start=1):
+        if not fpath.exists():
+            print(f"Error: Fixture file not found at {fpath}")
+            return
+
+        raw_text = fpath.read_text(encoding="utf-8")
+        payload_data = json.loads(raw_text)
+        sig = hmac.new(secret.encode("utf-8"), raw_text.encode("utf-8"), hashlib.sha256).hexdigest()
+        headers = {
+            "Content-Type": "application/json",
+            "X-Razorpay-Signature": sig,
+        }
+
+        resp = client.post("/webhooks/razorpay", content=raw_text.encode("utf-8"), headers=headers)
+        if resp.status_code != 200:
+            print(f"Delivery failed for {fpath.name}: HTTP {resp.status_code} - {resp.text}")
+            continue
+
+        data = resp.json()
+        sub_id = data.get("subscription_id")
+        att_num = data.get("attempt_number")
+        dec = data.get("decision", {})
+        action = dec.get("chosen_action")
+        guard = dec.get("guard_triggered")
+        guard_str = f" [GUARD TRIGGERED: {guard}]" if guard else ""
+        reason = dec.get("reason", "")
+
+        print(f"Webhook {idx}/3 ({fpath.name}):")
+        print(f"  • Event ID:        {data.get('event_id')}")
+        print(f"  • Subscription ID: {sub_id}")
+        print(f"  • Attempt Number:  {att_num} (accumulated in SQLite ledger)")
+        print(f"  • Chosen Action:   {action}{guard_str}")
+        print(f"  • Decision Reason: {reason}")
+        print("-" * 95)
+
+    if sub_id:
+        hist_resp = client.get(f"/subscriptions/{sub_id}")
+        if hist_resp.status_code == 200:
+            hist_data = hist_resp.json()
+            print(f"\n📋 GET /subscriptions/{sub_id} (Full Dunning History from SQLite Ledger):")
+            print(f"  Subscription ID:      {hist_data.get('subscription_id')}")
+            print(f"  Total Attempts Made:  {hist_data.get('total_attempts')}")
+            print(f"  Dunning Window Hours: {hist_data.get('dunning_window_hours')}h")
+            print(f"  Ledger History Sequence:")
+            for h in hist_data.get("history", []):
+                print(f"    - Attempt #{h['attempt_number']} [{h['received_at'][:19]}]: {h['decision_action']}")
+    print("=" * 95 + "\n")
 
 
 def process_batch(
@@ -1049,6 +1143,11 @@ def main():
         help="Replay sample webhook fixtures against the local FastAPI webhook receiver",
     )
     parser.add_argument(
+        "--replay-dunning",
+        action="store_true",
+        help="Replay multi-attempt subscription dunning fixtures demonstrating state continuity and retry cap exhaustion",
+    )
+    parser.add_argument(
         "--webhook-url",
         type=str,
         default="http://127.0.0.1:8000/webhooks/razorpay",
@@ -1063,6 +1162,10 @@ def main():
         run_escalation_audit(args.audit_out)
         return
 
+    if args.replay_dunning:
+        replay_dunning_campaign()
+        return
+
     if args.audit_summary and not (
         args.rules_only
         or args.benchmark
@@ -1075,6 +1178,7 @@ def main():
         or args.demo_out_of_scope
         or args.demo_low_confidence
         or args.replay_webhooks
+        or args.replay_dunning
         or args.escalation_audit
     ):
         print_audit_summary(args.audit_out)

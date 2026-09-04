@@ -2,7 +2,7 @@ import math
 import time
 from pathlib import Path
 from datetime import datetime
-from typing import Dict, List, Any, Tuple
+from typing import Dict, List, Any, Tuple, Optional
 from pydantic import BaseModel
 
 from models import FailedPayment, InterventionDecision

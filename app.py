@@ -12,7 +12,15 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from dotenv import load_dotenv
 
 from models import FailedPayment, AuditEntry, InterventionDecision
-from pipeline import classify_and_decide, log_audit_entry, POLICY_VERSION, DEDUPE_TTL_HOURS
+from pipeline import (
+    classify_and_decide,
+    log_audit_entry,
+    POLICY_VERSION,
+    DEDUPE_TTL_HOURS,
+    DUNNING_WINDOW_HOURS,
+    VALID_FAILURE_REASONS,
+)
+from error_normalizer import normalize_razorpay_error
 
 load_dotenv(Path(__file__).parent / ".env")
 
@@ -28,7 +36,7 @@ REPORT_PATH = Path(__file__).parent / "benchmark_report.html"
 
 
 def init_db(db_path: Path = DB_PATH):
-    """Initializes SQLite database with UNIQUE constraint on event_id."""
+    """Initializes SQLite database with UNIQUE constraint on event_id and multi-attempt dunning columns."""
     with sqlite3.connect(db_path) as conn:
         cursor = conn.cursor()
         cursor.execute(
@@ -37,10 +45,24 @@ def init_db(db_path: Path = DB_PATH):
                 event_id TEXT PRIMARY KEY,
                 event_type TEXT,
                 received_at TIMESTAMP,
-                payload TEXT
+                payload TEXT,
+                subscription_id TEXT,
+                attempt_number INTEGER,
+                decision_action TEXT,
+                decision_json TEXT
             )
             """
         )
+        cursor.execute("PRAGMA table_info(webhook_events)")
+        existing_cols = {col[1] for col in cursor.fetchall()}
+        for col_name, col_type in [
+            ("subscription_id", "TEXT"),
+            ("attempt_number", "INTEGER"),
+            ("decision_action", "TEXT"),
+            ("decision_json", "TEXT"),
+        ]:
+            if col_name not in existing_cols:
+                cursor.execute(f"ALTER TABLE webhook_events ADD COLUMN {col_name} {col_type}")
         conn.commit()
 
 
@@ -66,13 +88,18 @@ def map_razorpay_payload_to_failed_payment(payload: Dict[str, Any], event_id: st
     # Extract amount in paise
     amount_paise = payment_entity.get("amount") or payload.get("amount_paise") or 100000
 
-    # Extract failure reason
+    # Extract failure reason / error code
     raw_reason = (
         payment_entity.get("error_reason")
+        or payment_entity.get("error_code")
         or payment_entity.get("failure_reason")
         or payload.get("failure_reason")
+        or payload.get("error_reason")
         or "gateway_timeout"
     )
+    # Attempt normalization from external Razorpay code to internal taxonomy
+    normalized_reason = normalize_razorpay_error(raw_reason)
+    final_reason = normalized_reason if normalized_reason else raw_reason
 
     # Attempt count
     attempt_count = (
@@ -104,7 +131,12 @@ def map_razorpay_payload_to_failed_payment(payload: Dict[str, Any], event_id: st
     payment_state = payment_entity.get("payment_state") or payload.get("payment_state", "confirmed_failed")
 
     # Subscription ID
-    sub_id = subscription_entity.get("id") or payment_entity.get("subscription_id")
+    sub_id = (
+        subscription_entity.get("id")
+        or payment_entity.get("subscription_id")
+        or payload.get("subscription_id")
+        or (payment_entity.get("notes", {}).get("subscription_id") if isinstance(payment_entity.get("notes"), dict) else None)
+    )
 
     return FailedPayment(
         id=record_id,
@@ -112,7 +144,7 @@ def map_razorpay_payload_to_failed_payment(payload: Dict[str, Any], event_id: st
         customer_id=customer_id,
         amount_paise=amount_paise,
         currency="INR",
-        failure_reason=raw_reason,
+        failure_reason=final_reason,
         attempt_count=attempt_count,
         last_attempt_at=datetime.now(),
         subscription_id=sub_id,
@@ -207,23 +239,144 @@ async def receive_razorpay_webhook(request: Request):
                     content={"status": "duplicate_suppressed", "event_id": event_id}
                 )
 
-        # Record event in SQLite
-        cursor.execute(
-            "INSERT OR REPLACE INTO webhook_events (event_id, event_type, received_at, payload) VALUES (?, ?, ?, ?)",
-            (event_id, event_type, now.isoformat(), body_bytes.decode("utf-8"))
-        )
-        conn.commit()
+    # 4. Check failure reason normalization and out-of-scope routing
+    payment_entity = payload.get("payload", {}).get("payment", {}).get("entity", {})
+    raw_reason = (
+        payment_entity.get("error_reason")
+        or payment_entity.get("error_code")
+        or payment_entity.get("failure_reason")
+        or payload.get("failure_reason")
+        or payload.get("error_reason")
+        or "gateway_timeout"
+    )
+    normalized = normalize_razorpay_error(raw_reason)
+    final_reason = normalized if normalized else raw_reason
 
-    # 4. Map to FailedPayment domain model
+    if final_reason not in VALID_FAILURE_REASONS:
+        rec_id = payment_entity.get("id") or payload.get("id") or event_id
+        amt_paise = payment_entity.get("amount") or payload.get("amount_paise") or 0
+        sub_id = (
+            payload.get("payload", {}).get("subscription", {}).get("entity", {}).get("id")
+            or payment_entity.get("subscription_id")
+            or payload.get("subscription_id")
+        )
+        decision = InterventionDecision(
+            chosen_action="stop_and_writeoff",
+            reason=f"Rejected out of scope: '{final_reason}' is not a supported Indian failure reason.",
+            confidence=1.0,
+            max_retries_left=0,
+            escalate=False,
+            decision_source="guard",
+            guard_triggered="out_of_scope",
+            model_version="guard-v1",
+        )
+        with sqlite3.connect(DB_PATH) as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                INSERT OR REPLACE INTO webhook_events 
+                (event_id, event_type, received_at, payload, subscription_id, attempt_number, decision_action, decision_json) 
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    event_id,
+                    event_type,
+                    now.isoformat(),
+                    body_bytes.decode("utf-8"),
+                    sub_id,
+                    1,
+                    decision.chosen_action,
+                    decision.model_dump_json(),
+                ),
+            )
+            conn.commit()
+
+        audit_entry = AuditEntry(
+            timestamp=now,
+            record_id=rec_id,
+            failure_reason=str(final_reason),
+            decision=decision,
+            amount_at_risk_paise=amt_paise,
+            recovered_paise=0,
+            status="rejected_out_of_scope",
+            cost_paise=0,
+            violation=False,
+            penalty_paise=0,
+            model_version="guard-v1",
+            policy_version=POLICY_VERSION,
+            decision_source="guard",
+            guard_triggered="out_of_scope",
+        )
+        log_audit_entry(audit_entry, out_path=str(AUDIT_LOG_PATH))
+
+        return {
+            "status": "decision_made",
+            "event_id": event_id,
+            "record_id": rec_id,
+            "subscription_id": sub_id,
+            "attempt_number": 1,
+            "decision": decision.model_dump(),
+        }
+
+    # 5. Map to FailedPayment domain model
     try:
         payment = map_razorpay_payload_to_failed_payment(payload, event_id=event_id)
     except Exception as e:
         raise HTTPException(status_code=422, detail=f"Failed to map Razorpay payload: {e}")
 
-    # 5. Run shared decision engine (applies all 4 deterministic guards and strategy logic)
+    # 5. Multi-Attempt State Continuity via SQLite Dunning Window
+    sub_id = payment.subscription_id
+    attempt_num = 1
+    prior_actions = []
+
+    with sqlite3.connect(DB_PATH) as conn:
+        cursor = conn.cursor()
+        if sub_id:
+            window_start = (now - timedelta(hours=DUNNING_WINDOW_HOURS)).isoformat()
+            cursor.execute(
+                """
+                SELECT attempt_number, decision_action, received_at
+                FROM webhook_events
+                WHERE subscription_id = ? AND received_at >= ?
+                ORDER BY received_at ASC
+                """,
+                (sub_id, window_start),
+            )
+            prior_rows = cursor.fetchall()
+            if prior_rows:
+                attempt_num = len(prior_rows) + 1
+                prior_actions = [r[1] for r in prior_rows if r[1]]
+                notes_addition = f"Prior recovery actions attempted in dunning window: {', '.join(prior_actions)}."
+                payment.notes = f"{payment.notes} | {notes_addition}" if payment.notes else notes_addition
+
+        payment.attempt_count = attempt_num
+
+    # 6. Run shared decision engine (applies deterministic guards, retry caps, EV gate)
     decision = classify_and_decide(payment, use_llm=False)
 
-    # 6. Append to audit_log.jsonl
+    # 7. Record event with decision into SQLite
+    with sqlite3.connect(DB_PATH) as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            INSERT OR REPLACE INTO webhook_events 
+            (event_id, event_type, received_at, payload, subscription_id, attempt_number, decision_action, decision_json) 
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                event_id,
+                event_type,
+                now.isoformat(),
+                body_bytes.decode("utf-8"),
+                sub_id,
+                attempt_num,
+                decision.chosen_action,
+                decision.model_dump_json(),
+            )
+        )
+        conn.commit()
+
+    # 8. Append to audit_log.jsonl
     dec_source = getattr(decision, "decision_source", None) or ("guard" if getattr(decision, "guard_triggered", None) else "rules")
     mod_version = getattr(decision, "model_version", None) or ("guard-v1" if dec_source == "guard" else "rules-v1")
     guard_trig = getattr(decision, "guard_triggered", None)
@@ -248,10 +401,63 @@ async def receive_razorpay_webhook(request: Request):
     )
     log_audit_entry(audit_entry, out_path=str(AUDIT_LOG_PATH))
 
-    # 7. Return decision as JSON
+    # 9. Return decision as JSON
     return {
         "status": "decision_made",
         "event_id": event_id,
         "record_id": payment.id,
+        "subscription_id": sub_id,
+        "attempt_number": attempt_num,
         "decision": decision.model_dump(),
     }
+
+
+@app.get("/subscriptions/{subscription_id}")
+def get_subscription_history(subscription_id: str):
+    """
+    Returns the full event history and decision sequence across the dunning window 
+    for a given subscription.
+    """
+    with sqlite3.connect(DB_PATH) as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT event_id, event_type, received_at, attempt_number, decision_action, decision_json
+            FROM webhook_events
+            WHERE subscription_id = ?
+            ORDER BY received_at ASC
+            """,
+            (subscription_id,),
+        )
+        rows = cursor.fetchall()
+
+    if not rows:
+        raise HTTPException(
+            status_code=404, 
+            detail=f"Subscription '{subscription_id}' not found in recovery ledger."
+        )
+
+    history = []
+    for r in rows:
+        dec = None
+        if r[5]:
+            try:
+                dec = json.loads(r[5])
+            except Exception:
+                dec = {"action": r[4]}
+        history.append({
+            "event_id": r[0],
+            "event_type": r[1],
+            "received_at": r[2],
+            "attempt_number": r[3],
+            "decision_action": r[4],
+            "decision": dec,
+        })
+
+    return {
+        "subscription_id": subscription_id,
+        "total_attempts": len(history),
+        "dunning_window_hours": DUNNING_WINDOW_HOURS,
+        "history": history,
+    }
+

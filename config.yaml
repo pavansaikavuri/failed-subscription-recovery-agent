@@ -33,6 +33,7 @@ communication:
 
 dedupe:
   ttl_hours: 72                                      # Webhook idempotency window
+  dunning_window_hours: 336                          # 14-day multi-attempt dunning window
 
 escalation_policy:
   escalation_cost_paise: 15000                       # Human escalation support cost (₹150)
