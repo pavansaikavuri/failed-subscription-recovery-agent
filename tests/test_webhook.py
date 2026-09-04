@@ -296,3 +296,66 @@ def test_unmapped_error_routes_to_out_of_scope_writeoff():
     assert data["decision"]["chosen_action"] == "stop_and_writeoff"
     assert data["decision"]["guard_triggered"] == "out_of_scope"
 
+
+def test_boundary_parity_batch_and_webhook_at_all_attempt_counts():
+    """
+    Boundary proof: The SAME record at the SAME attempt_count produces the EXACT SAME action
+    and guard on both the batch path (classify_and_decide) and webhook receiver path.
+    Tests attempt_count 1, 2, 3, 4 across UPI (cap=3) and Card (cap=4).
+    """
+    for method, cap in [("upi", 3), ("card", 4)]:
+        for att in (1, 2, 3, 4):
+            rec_id = f"pay_boundary_{method}_{att}_{int(datetime.now().timestamp() * 1000)}"
+            payment_obj = FailedPayment(
+                id=rec_id,
+                merchant_id="mid_boundary_01",
+                customer_id="cust_boundary_01",
+                amount_paise=199900,
+                currency="INR",
+                failure_reason="insufficient_funds",
+                attempt_count=att,
+                last_attempt_at=datetime.now(),
+                payment_method=method,
+                customer_ltv_paise=2500000,
+                notes="Boundary parity verification test",
+                payment_state="confirmed_failed",
+            )
+            # 1. Batch path decision
+            batch_decision = classify_and_decide(payment_obj, use_llm=False)
+
+            # 2. Webhook path decision
+            webhook_payload = {
+                "event": "payment.failed",
+                "event_id": f"evt_{rec_id}",
+                "account_id": payment_obj.merchant_id,
+                "payload": {
+                    "payment": {
+                        "entity": {
+                            "id": payment_obj.id,
+                            "amount": payment_obj.amount_paise,
+                            "currency": payment_obj.currency,
+                            "method": payment_obj.payment_method,
+                            "error_reason": payment_obj.failure_reason,
+                            "attempt_count": att,
+                            "payment_state": payment_obj.payment_state,
+                            "notes": payment_obj.notes,
+                        }
+                    }
+                },
+            }
+            body = json.dumps(webhook_payload).encode("utf-8")
+            sig = _sign(body)
+            resp = client.post("/webhooks/razorpay", content=body, headers={"X-Razorpay-Signature": sig})
+            assert resp.status_code == 200
+            webhook_data = resp.json()
+            wh_action = webhook_data["decision"]["chosen_action"]
+            wh_guard = webhook_data["decision"].get("guard_triggered")
+
+            assert wh_action == batch_decision.chosen_action, (
+                f"Mismatch on {method} at attempt {att}: webhook got {wh_action}, batch got {batch_decision.chosen_action}"
+            )
+            assert wh_guard == batch_decision.guard_triggered, (
+                f"Guard mismatch on {method} at attempt {att}: webhook got {wh_guard}, batch got {batch_decision.guard_triggered}"
+            )
+
+

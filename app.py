@@ -326,7 +326,7 @@ async def receive_razorpay_webhook(request: Request):
 
     # 5. Multi-Attempt State Continuity via SQLite Dunning Window
     sub_id = payment.subscription_id
-    attempt_num = 1
+    attempt_num = payment.attempt_count
     prior_actions = []
 
     with sqlite3.connect(DB_PATH) as conn:

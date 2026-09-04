@@ -257,6 +257,7 @@ def replay_dunning_campaign(
       Attempt 3: stop_and_writeoff (Guard 2: UPI retry_cap exhausted from accumulated state)
     Then queries GET /subscriptions/{subscription_id} to display full ledger progression.
     """
+    import time
     import hmac
     import hashlib
     from starlette.testclient import TestClient
@@ -276,22 +277,28 @@ def replay_dunning_campaign(
     print("=" * 95 + "\n")
 
     client = TestClient(app)
-    sub_id = None
+    run_id = int(time.time() * 1000)
+    sub_id = f"sub_dunning_upi_{run_id}"
 
     for idx, fpath in enumerate(files, start=1):
         if not fpath.exists():
             print(f"Error: Fixture file not found at {fpath}")
             return
 
-        raw_text = fpath.read_text(encoding="utf-8")
-        payload_data = json.loads(raw_text)
-        sig = hmac.new(secret.encode("utf-8"), raw_text.encode("utf-8"), hashlib.sha256).hexdigest()
+        payload_data = json.loads(fpath.read_text(encoding="utf-8"))
+        payload_data["event_id"] = f"evt_dunning_{run_id}_{idx}"
+        payment_ent = payload_data.get("payload", {}).get("payment", {}).get("entity", {})
+        payment_ent["id"] = f"pay_dunning_{run_id}_{idx}"
+        payment_ent["subscription_id"] = sub_id
+
+        raw_bytes = json.dumps(payload_data).encode("utf-8")
+        sig = hmac.new(secret.encode("utf-8"), raw_bytes, hashlib.sha256).hexdigest()
         headers = {
             "Content-Type": "application/json",
             "X-Razorpay-Signature": sig,
         }
 
-        resp = client.post("/webhooks/razorpay", content=raw_text.encode("utf-8"), headers=headers)
+        resp = client.post("/webhooks/razorpay", content=raw_bytes, headers=headers)
         if resp.status_code != 200:
             print(f"Delivery failed for {fpath.name}: HTTP {resp.status_code} - {resp.text}")
             continue

@@ -2,16 +2,16 @@
 Razorpay Error Code Normalizer
 
 This module normalizes external Razorpay payment gateway error codes and error reasons 
-into the internal 9-reason taxonomy used by the recovery decision engine:
-    1. insufficient_funds
-    2. gateway_timeout
-    3. mandate_not_registered
-    4. mandate_lapsed_on_reissue
-    5. issuer_declined
-    6. expired_card
-    7. risk_block
-    8. pre_debit_notice_not_acked
-    9. network_failure
+into the internal 9-reason taxonomy defined by models.FailedPayment:
+    1. mandate_not_registered
+    2. afa_required_not_completed
+    3. upi_pin_failure
+    4. insufficient_funds
+    5. card_expired
+    6. issuer_declined
+    7. gateway_timeout
+    8. mandate_lapsed_on_reissue
+    9. pre_debit_notice_not_acked
 
 CRITICAL ARCHITECTURAL NOTE ON PARTIAL MAPPING:
 This mapping is INTENTIONALLY PARTIAL. It maps only genuine, verified error codes 
@@ -22,46 +22,50 @@ and error reasons documented in Razorpay's public API documentation:
 - https://razorpay.com/docs/errors/common/
 
 VERIFIED RAZORPAY CODES INCLUDED:
-- 'card_declined' -> 'issuer_declined' (Razorpay Cards Doc: "The payment was declined by the customer's bank...")
-- 'payment_declined' -> 'issuer_declined' (Razorpay UPI Doc: "The payment did not go through because the funds could not be debited...")
-- 'card_expired' -> 'expired_card' (Razorpay Cards Doc: "The payment could not be completed because the customer's card is expired.")
-- 'payment_timed_out' -> 'gateway_timeout' (Razorpay Cards & UPI Docs: "The payment could not be completed as the customer exceeded the time limit...")
-- 'gateway_technical_error' -> 'network_failure' (Razorpay Cards & UPI Docs: "There was a downtime on our partner bank...")
-- 'bank_technical_error' -> 'network_failure' (Razorpay Cards & UPI Docs: "There was a downtime on the customer's bank...")
-- 'payment_risk_check_failed' -> 'risk_block' (Razorpay Cards Doc: "The transaction was unsuccessful as the customer's bank declined the payment, citing it as fraudulent.")
-- 'gateway_error' -> 'gateway_timeout' (Razorpay Common Errors Doc: Top-level error class code 'GATEWAY_ERROR')
+- 'card_declined' -> 'issuer_declined'
+  (Razorpay Cards Doc: "The payment was declined by the customer's bank, resulting in the transaction being unsuccessful.")
+- 'card_expired' -> 'card_expired'
+  (Razorpay Cards Doc: "The payment could not be completed because the customer's card is expired.")
+- 'payment_timed_out' -> 'gateway_timeout'
+  (Razorpay Cards & UPI Docs: "The payment could not be completed as the customer exceeded the time limit for payment processing.")
+- 'gateway_technical_error' -> 'gateway_timeout'
+  (Razorpay Cards & UPI Docs: "There was a downtime on our partner bank due to which the payment has failed.")
+- 'bank_technical_error' -> 'gateway_timeout'
+  (Razorpay Cards & UPI Docs: "There was a downtime on the customer's bank due to which the payment has failed.")
+- 'gateway_error' -> 'gateway_timeout'
+  (Razorpay Common Errors Doc: Top-level error class code 'GATEWAY_ERROR')
 
-ELIMINATED / EXCLUDED CODES (NOT INCLUDED):
-- 'BAD_REQUEST_PAYMENT_MANDATE_NOT_REGISTERED' (Constructed by analogy; not in public docs)
-- 'BAD_REQUEST_PAYMENT_MANDATE_LAPSED' (Constructed by analogy; not in public docs)
-- 'BAD_REQUEST_PAYMENT_PRE_DEBIT_NOTICE_NOT_ACKED' (Constructed by analogy; pre-debit notices are regulatory notifications, not gateway error codes)
-- 'BAD_REQUEST_PAYMENT_UPI_PIN_FAILED' (Constructed by analogy; not in public docs)
-- Identity mappings like 'insufficient_funds' -> 'insufficient_funds' (Omitted; identity mapping internal strings is padding, not normalization)
+DELIBERATELY EXCLUDED CODES (ROUTED TO OUT-OF-SCOPE BY DESIGN):
+- 'payment_declined': Excluded. The UPI doc cites "funds could not be debited from the customer's bank account", 
+  which conflates insufficient balance with general debit failures without balance proof. Dropped rather than guessing.
+- 'payment_risk_check_failed': Excluded. Customer bank fraud rejections have no corresponding enum in our 9-reason taxonomy 
+  (no 'risk_block'). Dropped rather than inventing taxonomy strings, allowing it to route safely to out-of-scope write-off.
+- 'BAD_REQUEST_PAYMENT_MANDATE_NOT_REGISTERED': Excluded (constructed by analogy; not in public gateway docs).
+- 'BAD_REQUEST_PAYMENT_MANDATE_LAPSED': Excluded (constructed by analogy; not in public gateway docs).
+- 'BAD_REQUEST_PAYMENT_PRE_DEBIT_NOTICE_NOT_ACKED': Excluded (regulatory workflow concept, not gateway error code).
+- 'BAD_REQUEST_PAYMENT_UPI_PIN_FAILED': Excluded (constructed by analogy; not in public gateway docs).
+- 'insufficient_funds -> insufficient_funds': Excluded (identity mapping internal string is padding, not normalization).
 
 DESIGN PRINCIPLE:
-Any unmapped, unrecognized, or internal code returns None. In the webhook receiver 
-and recovery pipeline, unmapped errors are routed to out-of-scope rejection 
-(guard_triggered="out_of_scope") by design, rather than guessing or fabricating 
-unknown gateway behavior.
+Every target string in this mapping MUST exist within models.FailedPayment's failure_reason Literal.
+Any unmapped or unrecognized code returns None. In the webhook receiver and recovery pipeline, 
+unmapped errors are routed to out-of-scope rejection (guard_triggered="out_of_scope") by design, 
+never guessing or fabricating unknown gateway behavior.
 """
 
 from typing import Optional, Dict
 
-# Strictly verified Razorpay public documentation codes mapping to internal taxonomy.
-# Note: Zero identity mappings included.
+# Strictly verified Razorpay public documentation codes mapping to the 9 internal reasons.
+# Every target value is strictly validated against models.FailedPayment's failure_reason.
 VERIFIED_RAZORPAY_ERROR_MAP: Dict[str, str] = {
     # Cards errors (razorpay.com/docs/errors/payments/cards)
     "card_declined": "issuer_declined",
-    "card_expired": "expired_card",
-    "payment_risk_check_failed": "risk_block",
+    "card_expired": "card_expired",
     
-    # UPI errors (razorpay.com/docs/errors/payments/upi)
-    "payment_declined": "issuer_declined",
-    
-    # Shared Cards & UPI timeout / technical downtime
+    # Shared Cards & UPI timeout / technical downtime (razorpay.com/docs/errors/payments/cards & upi)
     "payment_timed_out": "gateway_timeout",
-    "gateway_technical_error": "network_failure",
-    "bank_technical_error": "network_failure",
+    "gateway_technical_error": "gateway_timeout",
+    "bank_technical_error": "gateway_timeout",
     
     # High-level error class (razorpay.com/docs/errors/common)
     "gateway_error": "gateway_timeout",
