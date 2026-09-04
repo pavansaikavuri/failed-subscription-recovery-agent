@@ -53,6 +53,12 @@ Across the 40-record evaluation batch, three distinct regulatory penalty thresho
 
 State plainly: below ₹62 no violation is deterred; between ₹889 and ₹1,351 compliance is the better policy while individual high-value violations remain individually profitable; above ₹1,351 nothing pays. Note that all three thresholds are derived programmatically from this 40-record batch and are batch-specific, not general constants.
 
+### Expected-value gating on human escalation
+
+Theoretical expected gain from the EV gate is ₹176.40. Realised gain across 200 seeds is ₹145.01 — below theory, because human escalation happened to over-perform its 35% prior in these seeds (38% realised). The measured benefit is therefore conservative, not flattered by sampling.
+
+Paired across 200 identical seeds, the EV gate improves `agent_rules` net by **₹145.01 ± ₹18.36**. The effect is unambiguous and small: 0.15% of the ₹98,952 book. Its significance is structural rather than monetary — escalating a ₹299 payment at a ₹150 support cost is wrong regardless of how it samples, and the gate removes that class of decision.
+
 Two consequences worth stating plainly:
 
 1. **The compliant strategies are penalty-invariant.** `agent_rules`
