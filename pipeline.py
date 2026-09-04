@@ -52,14 +52,19 @@ RETRYABLE_REASONS = set(RETRY_POLICY.get("retryable_reasons", []))
 CONFIDENCE_THRESHOLD = float(CONFIG.get("confidence_threshold", 0.60))
 AFA_THRESHOLD_INR = float(CONFIG.get("afa_thresholds_inr", {}).get("e_mandate", 15000))
 DEDUPE_TTL_HOURS = float(CONFIG.get("dedupe", {}).get("ttl_hours", 72))
+ESCALATION_POLICY = CONFIG.get("escalation_policy", {})
+ESCALATION_COST_PAISE: int = int(ESCALATION_POLICY.get("escalation_cost_paise", 15000))
+LTV_ESCALATION_THRESHOLD: int = int(ESCALATION_POLICY.get("ltv_escalation_threshold", 2000000))
 
 
 def compute_policy_version() -> str:
-    """Computes a SHA256 hash of relevant config.yaml values: retry_caps, hard_decline_reasons, confidence_threshold."""
+    """Computes a SHA256 hash of relevant config.yaml values: retry_caps, hard_decline_reasons, confidence_threshold, escalation_policy."""
     policy_data = {
         "retry_caps": RETRY_CAPS,
         "hard_decline_reasons": sorted(list(HARD_DECLINE_REASONS)),
         "confidence_threshold": CONFIDENCE_THRESHOLD,
+        "escalation_cost_paise": ESCALATION_COST_PAISE,
+        "ltv_escalation_threshold": LTV_ESCALATION_THRESHOLD,
     }
     encoded = json.dumps(policy_data, sort_keys=True).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()[:12]
@@ -867,6 +872,85 @@ def print_audit_summary(audit_path: str = "audit_log.jsonl"):
         print(f"  • {st}: {count}")
 
 
+def run_escalation_audit(audit_path: str = "audit_log.jsonl"):
+    """
+    Reads audit_log.jsonl and audits all human escalations against expected value (EV):
+    EV = (escalation recovery probability * amount) - escalation cost
+    Prints amount, customer LTV, cost, estimated expected recovery, and net EV.
+    Reports negative-EV escalations and total value destroyed.
+    """
+    path = Path(audit_path)
+    if not path.exists():
+        print(f"Error: Audit log file not found at: {path}")
+        return
+
+    from outcome_model import RECOVERY_MATRIX
+
+    batch_by_id = {
+        (r.get("id") if isinstance(r, dict) else r.id): (r if isinstance(r, dict) else r.model_dump())
+        for r in BATCH
+    }
+
+    escalated = []
+    with open(path, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            data = json.loads(line)
+            action = data.get("decision", {}).get("chosen_action")
+            escalate_flag = data.get("decision", {}).get("escalate", False)
+            if action == "escalate_to_human" or escalate_flag:
+                rec_id = data.get("record_id")
+                b_item = batch_by_id.get(rec_id, {})
+                amt = data.get("amount_at_risk_paise", b_item.get("amount_paise", 0))
+                ltv = b_item.get("customer_ltv_paise", 0)
+                reason = data.get("failure_reason", b_item.get("failure_reason", ""))
+                prob = RECOVERY_MATRIX.get(reason, {}).get("escalate_to_human", 0.0)
+                cost = ESCALATION_COST_PAISE
+                exp_rec = int(amt * prob)
+                net_ev = exp_rec - cost
+                escalated.append({
+                    "id": rec_id,
+                    "reason": reason,
+                    "amount_paise": amt,
+                    "ltv_paise": ltv,
+                    "prob": prob,
+                    "cost_paise": cost,
+                    "exp_rec_paise": exp_rec,
+                    "net_ev_paise": net_ev,
+                    "decision_reason": data.get("decision", {}).get("reason", ""),
+                })
+
+    print("\n" + "=" * 110)
+    print(f"📋 HUMAN ESCALATION EXPECTED-VALUE AUDIT ({path.name})")
+    print(f"Escalation Cost Policy: ₹{ESCALATION_COST_PAISE/100:.2f} | LTV Protection Threshold: ₹{LTV_ESCALATION_THRESHOLD/100:,.2f}")
+    print("=" * 110)
+    print(f"{'Record ID':<20} | {'Failure Reason':<28} | {'Amount (₹)':<10} | {'LTV (₹)':<10} | {'Exp Rec (₹)':<12} | {'Cost (₹)':<10} | {'Net EV (₹)':<10}")
+    print("-" * 110)
+
+    neg_ev = []
+    tot_destroyed = 0.0
+
+    for e in escalated:
+        amt_inr = e["amount_paise"] / 100
+        ltv_inr = e["ltv_paise"] / 100
+        exp_inr = e["exp_rec_paise"] / 100
+        cost_inr = e["cost_paise"] / 100
+        net_inr = e["net_ev_paise"] / 100
+        status = "NEGATIVE EV" if net_inr < 0 else "POSITIVE EV"
+        if net_inr < 0:
+            neg_ev.append(e)
+            tot_destroyed += abs(net_inr)
+        print(f"{e['id']:<20} | {e['reason']:<28} | ₹{amt_inr:>8,.2f} | ₹{ltv_inr:>8,.2f} | ₹{exp_inr:>10,.2f} | ₹{cost_inr:>8,.2f} | ₹{net_inr:>+8,.2f} [{status}]")
+
+    print("=" * 110)
+    print(f"Total Escalated Records: {len(escalated)}")
+    print(f"Negative EV Escalations: {len(neg_ev)} / {len(escalated)} ({(len(neg_ev)/len(escalated)*100 if escalated else 0.0):.1f}%)")
+    print(f"Total Value Destroyed:   ₹{tot_destroyed:,.2f}")
+    print("=" * 110 + "\n")
+
+
 def main():
     parser = argparse.ArgumentParser(description="Razorpay Subscription Recovery Pipeline")
     parser.add_argument(
@@ -949,6 +1033,11 @@ def main():
         help="Read audit_log.jsonl back and print counts by decision_source, guard_triggered, and status",
     )
     parser.add_argument(
+        "--escalation-audit",
+        action="store_true",
+        help="Audit human escalations in audit_log.jsonl against expected value (EV) and LTV threshold",
+    )
+    parser.add_argument(
         "--html-report",
         type=str,
         default="benchmark_report.html",
@@ -970,6 +1059,10 @@ def main():
 
     print_policy_version_once()
 
+    if args.escalation_audit:
+        run_escalation_audit(args.audit_out)
+        return
+
     if args.audit_summary and not (
         args.rules_only
         or args.benchmark
@@ -982,6 +1075,7 @@ def main():
         or args.demo_out_of_scope
         or args.demo_low_confidence
         or args.replay_webhooks
+        or args.escalation_audit
     ):
         print_audit_summary(args.audit_out)
         return

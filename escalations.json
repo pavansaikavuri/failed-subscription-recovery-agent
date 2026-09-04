@@ -10,16 +10,6 @@
     "payment_state": "confirmed_failed"
   },
   {
-    "record_id": "pay_In13mNoPqRsT32",
-    "amount_paise": 29900,
-    "failure_reason": "afa_required_not_completed",
-    "escalation_trigger": "rule_escalation",
-    "confidence": 0.65,
-    "decision_reason": "AFA challenge abandoned; requires customer authentication under RBI threshold (\u20b915,000).",
-    "reason": "AFA challenge abandoned; requires customer authentication under RBI threshold (\u20b915,000).",
-    "payment_state": "confirmed_failed"
-  },
-  {
     "record_id": "pay_In15oPqStUvW54",
     "amount_paise": 849000,
     "failure_reason": "mandate_lapsed_on_reissue",
@@ -67,16 +57,6 @@
     "confidence": 0.8,
     "decision_reason": "Hard decline reason 'mandate_lapsed_on_reissue'; non-retryable per policy.",
     "reason": "Hard decline reason 'mandate_lapsed_on_reissue'; non-retryable per policy.",
-    "payment_state": "confirmed_failed"
-  },
-  {
-    "record_id": "pay_In35iJkLMNOP54",
-    "amount_paise": 29900,
-    "failure_reason": "afa_required_not_completed",
-    "escalation_trigger": "rule_escalation",
-    "confidence": 0.65,
-    "decision_reason": "AFA challenge abandoned; requires customer authentication under RBI threshold (\u20b915,000).",
-    "reason": "AFA challenge abandoned; requires customer authentication under RBI threshold (\u20b915,000).",
     "payment_state": "confirmed_failed"
   },
   {

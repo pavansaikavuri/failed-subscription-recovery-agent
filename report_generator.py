@@ -5,12 +5,12 @@ from datetime import datetime
 
 STRATEGY_COLORS = {
     "oracle": "#7c3aed",
-    "agent_rules": "#059669",
-    "agent_llm": "#0284c7",
+    "agent_rules": "#2563eb",
+    "agent_llm": "#0f172a",
     "naive_rules": "#d97706",
     "always_retry": "#dc2626",
-    "message_only": "#4f46e5",
-    "no_action": "#94a3b8",
+    "message_only": "#059669",
+    "no_action": "#64748b",
 }
 
 STRATEGY_LABELS = {
@@ -28,13 +28,14 @@ def build_sensitivity_curve_svg(
     sweep_results: Dict[int, Dict[str, float]],
     breakeven_penalty_inr: float,
     penalties_inr: List[int],
+    oracle_threshold_inr: float = 1351.22,
 ) -> str:
-    """Draws inline SVG of the penalty sensitivity curve with break-even marker and plunging always_retry."""
-    width = 1040
-    height = 540
-    margin_left = 95
-    margin_right = 165
-    margin_top = 45
+    """Draws inline SVG of the penalty sensitivity curve with dual vertical markers and distinct series strokes."""
+    width = 960
+    height = 560
+    margin_left = 90
+    margin_right = 140
+    margin_top = 68
     margin_bottom = 65
     plot_width = width - margin_left - margin_right
     plot_height = height - margin_top - margin_bottom
@@ -76,7 +77,7 @@ def build_sensitivity_curve_svg(
         sy = map_y(cur_y)
         is_zero = (cur_y == 0)
         line_color = "#94a3b8" if is_zero else "#f1f5f9"
-        line_width = "1.75" if is_zero else "1"
+        line_width = "1.5" if is_zero else "1"
         line_dash = 'stroke-dasharray="4,4"' if is_zero else ""
 
         svg_parts.append(
@@ -84,12 +85,12 @@ def build_sensitivity_curve_svg(
             f'stroke="{line_color}" stroke-width="{line_width}" {line_dash} />'
         )
 
-        font_weight = "bold" if is_zero else "normal"
+        font_weight = "600" if is_zero else "400"
         text_fill = "#0f172a" if is_zero else "#64748b"
-        label_text = f"₹{cur_y:+,}" if cur_y != 0 else "₹0 (Break-Even Net)"
+        label_text = f"₹{cur_y:+,}" if cur_y != 0 else "₹0 (Break-Even)"
         svg_parts.append(
             f'<text x="{margin_left - 10}" y="{sy + 4:.1f}" text-anchor="end" font-size="11" '
-            f'font-weight="{font_weight}" fill="{text_fill}">{label_text}</text>'
+            f'font-weight="{font_weight}" fill="{text_fill}" style="font-variant-numeric: tabular-nums;">{label_text}</text>'
         )
         cur_y += step_y
 
@@ -103,28 +104,35 @@ def build_sensitivity_curve_svg(
         )
         svg_parts.append(
             f'<text x="{sx:.1f}" y="{margin_top + plot_height + 20}" text-anchor="middle" font-size="11" '
-            f'fill="#64748b">₹{xt:,}</text>'
+            f'fill="#64748b" style="font-variant-numeric: tabular-nums;">₹{xt:,}</text>'
         )
 
-    # X-axis label
+    # X-axis title
     svg_parts.append(
-        f'<text x="{margin_left + plot_width / 2:.1f}" y="{margin_top + plot_height + 48}" '
+        f'<text x="{margin_left + plot_width / 2:.1f}" y="{margin_top + plot_height + 46}" '
         f'text-anchor="middle" font-size="12" font-weight="600" fill="#334155">'
         f'Regulatory Non-Compliance Penalty per Violation (₹)</text>'
     )
 
     # Y-axis title
     svg_parts.append(
-        f'<text transform="rotate(-90)" x="{-margin_top - plot_height / 2:.1f}" y="{margin_left - 65}" '
+        f'<text transform="rotate(-90)" x="{-margin_top - plot_height / 2:.1f}" y="{margin_left - 62}" '
         f'text-anchor="middle" font-size="12" font-weight="600" fill="#334155">'
         f'Mean Net Recovery (₹)</text>'
     )
 
-    # Break-Even Vertical Marker at breakeven_penalty_inr
+    # MARKER 1: Break-Even Crossing Point at breakeven_penalty_inr
     be_x = map_x(breakeven_penalty_inr)
     svg_parts.append(
         f'<line x1="{be_x:.1f}" y1="{margin_top}" x2="{be_x:.1f}" y2="{margin_top + plot_height}" '
-        f'stroke="#d97706" stroke-width="2.5" stroke-dasharray="6,4" />'
+        f'stroke="#d97706" stroke-width="2" stroke-dasharray="6,4" />'
+    )
+
+    # MARKER 2: Oracle Compliance Threshold at oracle_threshold_inr
+    ot_x = map_x(oracle_threshold_inr)
+    svg_parts.append(
+        f'<line x1="{ot_x:.1f}" y1="{margin_top}" x2="{ot_x:.1f}" y2="{margin_top + plot_height}" '
+        f'stroke="#7c3aed" stroke-width="2" stroke-dasharray="3,3" />'
     )
 
     # Draw strategy polylines
@@ -144,17 +152,26 @@ def build_sensitivity_curve_svg(
         dash = ""
         width_val = "2.5"
         if strat == "oracle":
-            dash = 'stroke-dasharray="6,3"'
+            dash = 'stroke-dasharray="2,3"'
             width_val = "2.5"
         elif strat == "agent_rules":
             width_val = "3.5"
+            dash = ""
+        elif strat == "agent_llm":
+            width_val = "2.5"
+            dash = 'stroke-dasharray="8,4"'
+        elif strat == "naive_rules":
+            width_val = "2.2"
+            dash = 'stroke-dasharray="6,3"'
         elif strat == "always_retry":
-            width_val = "3.0"
+            width_val = "2.8"
+            dash = ""
         elif strat == "message_only":
-            dash = 'stroke-dasharray="4,2"'
+            width_val = "2.8"
+            dash = 'stroke-dasharray="10,2,2,2"'  # distinct dash-dot pattern
         elif strat == "no_action":
-            dash = 'stroke-dasharray="3,3"'
-            width_val = "1.5"
+            dash = 'stroke-dasharray="4,4"'
+            width_val = "1.8"
 
         svg_parts.append(
             f'<polyline points="{poly_str}" fill="none" stroke="{color}" stroke-width="{width_val}" '
@@ -163,7 +180,7 @@ def build_sensitivity_curve_svg(
 
         # Plot point dots
         for x, y, _ in pts:
-            svg_parts.append(f'<circle cx="{x:.1f}" cy="{y:.1f}" r="4" fill="{color}" stroke="#ffffff" stroke-width="1.5" />')
+            svg_parts.append(f'<circle cx="{x:.1f}" cy="{y:.1f}" r="3.5" fill="{color}" stroke="#ffffff" stroke-width="1.5" />')
 
         last_x, last_y, last_val = pts[-1]
         end_labels.append({"strat": strat, "x": last_x, "y": last_y, "val": last_val, "color": color})
@@ -175,48 +192,63 @@ def build_sensitivity_curve_svg(
         if end_labels[k]["y"] - end_labels[k-1]["y"] < min_gap:
             end_labels[k]["y"] = end_labels[k-1]["y"] + min_gap
 
+    # Curve end labels: Strategy name ONLY (no numbers / penalty levels)
     for item in end_labels:
-        val_str = f"₹{item['val']:+,.0f}" if item['val'] != 0 else "₹0"
         svg_parts.append(
-            f'<text x="{item["x"] + 8:.1f}" y="{item["y"] + 4:.1f}" font-size="11" font-weight="600" fill="{item["color"]}">'
-            f'{item["strat"]} ({val_str})</text>'
+            f'<text x="{item["x"] + 8:.1f}" y="{item["y"] + 4:.1f}" font-size="11.5" font-weight="600" fill="{item["color"]}">'
+            f'{item["strat"]}</text>'
         )
 
-    # Break-Even Intersection Dot & Callout Box
-    # Y position at break-even for agent_rules
+    # Marker 1 Callout: Break-Even Crossing Point Badge
     agent_net_at_be = sweep_results[penalties_inr[0]].get("agent_rules", 23619.58)
     be_y = map_y(agent_net_at_be)
-
     svg_parts.append(
-        f'<circle cx="{be_x:.1f}" cy="{be_y:.1f}" r="8" fill="#d97706" stroke="#ffffff" stroke-width="2.5" />'
-    )
-    svg_parts.append(
-        f'<circle cx="{be_x:.1f}" cy="{be_y:.1f}" r="13" fill="none" stroke="#d97706" stroke-width="1.5" opacity="0.4" />'
+        f'<circle cx="{be_x:.1f}" cy="{be_y:.1f}" r="7" fill="#d97706" stroke="#ffffff" stroke-width="2" />'
     )
 
-    # Callout badge for break-even, placed cleanly in top margin directly aligned with dashed marker
-    box_w = 210
-    box_h = 34
+    box_w = 172
+    box_h = 27
     box_x = be_x - box_w / 2
-    box_y = 6
-
+    box_y = 5
     svg_parts.append(
         f'<g>'
-        f'<rect x="{box_x:.1f}" y="{box_y:.1f}" width="{box_w}" height="{box_h}" rx="5" '
-        f'fill="#fffbeb" stroke="#d97706" stroke-width="1.5" filter="drop-shadow(0 2px 4px rgba(0,0,0,0.06))" />'
-        f'<text x="{box_x + box_w / 2:.1f}" y="{box_y + 14:.1f}" text-anchor="middle" font-size="11" '
-        f'font-weight="bold" fill="#92400e">Crossing Point: ₹{breakeven_penalty_inr:,.2f}</text>'
-        f'<text x="{box_x + box_w / 2:.1f}" y="{box_y + 27:.1f}" text-anchor="middle" font-size="9.5" '
-        f'font-weight="600" fill="#b45309">agent_rules overtakes naive_rules</text>'
+        f'<rect x="{box_x:.1f}" y="{box_y:.1f}" width="{box_w}" height="{box_h}" rx="4" '
+        f'fill="#fffbeb" stroke="#d97706" stroke-width="1.2" />'
+        f'<text x="{box_x + box_w / 2:.1f}" y="{box_y + 11.5:.1f}" text-anchor="middle" font-size="10" '
+        f'font-weight="bold" fill="#92400e" style="font-variant-numeric: tabular-nums;">Crossing: ₹{breakeven_penalty_inr:,.2f}</text>'
+        f'<text x="{box_x + box_w / 2:.1f}" y="{box_y + 22:.1f}" text-anchor="middle" font-size="8.5" '
+        f'font-weight="600" fill="#b45309">agent_rules > naive_rules</text>'
+        f'</g>'
+    )
+
+    # Marker 2 Callout: Oracle Compliance Threshold Badge
+    oracle_val_at_ot = sweep_results[5000].get("oracle", 26110.62)
+    ot_y = map_y(oracle_val_at_ot)
+    svg_parts.append(
+        f'<circle cx="{ot_x:.1f}" cy="{ot_y:.1f}" r="7" fill="#7c3aed" stroke="#ffffff" stroke-width="2" />'
+    )
+
+    ot_box_w = 186
+    ot_box_h = 27
+    ot_box_x = ot_x - ot_box_w / 2
+    ot_box_y = 36
+    svg_parts.append(
+        f'<g>'
+        f'<rect x="{ot_box_x:.1f}" y="{ot_box_y:.1f}" width="{ot_box_w}" height="{ot_box_h}" rx="4" '
+        f'fill="#f5f3ff" stroke="#7c3aed" stroke-width="1.2" />'
+        f'<text x="{ot_box_x + ot_box_w / 2:.1f}" y="{ot_box_y + 11.5:.1f}" text-anchor="middle" font-size="10" '
+        f'font-weight="bold" fill="#5b21b6" style="font-variant-numeric: tabular-nums;">Oracle Threshold: ₹{oracle_threshold_inr:,.2f}</text>'
+        f'<text x="{ot_box_x + ot_box_w / 2:.1f}" y="{ot_box_y + 22:.1f}" text-anchor="middle" font-size="8.5" '
+        f'font-weight="600" fill="#6d28d9">violations drop to 0</text>'
         f'</g>'
     )
 
     # Plunge label for always_retry
     always_end_y = map_y(sweep_results[5000].get("always_retry", -66666.0))
     svg_parts.append(
-        f'<g transform="translate({map_x(5000) - 210}, {always_end_y - 28})">'
-        f'<rect x="0" y="0" width="200" height="24" rx="4" fill="#fee2e2" stroke="#dc2626" stroke-width="1" />'
-        f'<text x="100" y="16" text-anchor="middle" font-size="10" font-weight="bold" fill="#991b1b">'
+        f'<g transform="translate({map_x(5000) - 195}, {always_end_y - 24})">'
+        f'<rect x="0" y="0" width="185" height="22" rx="4" fill="#fee2e2" stroke="#dc2626" stroke-width="1" />'
+        f'<text x="92.5" y="15" text-anchor="middle" font-size="9.5" font-weight="bold" fill="#991b1b">'
         f'always_retry plunges below zero</text>'
         f'</g>'
     )
@@ -227,13 +259,13 @@ def build_sensitivity_curve_svg(
 
 def build_horizontal_bar_chart_svg(benchmark_stats: List[Any]) -> str:
     """Draws inline SVG horizontal bar chart of mean net recovery at base penalty with paired SE error bars."""
-    width = 1040
+    width = 960
     n_bars = len(benchmark_stats)
     bar_height = 28
     bar_gap = 18
-    margin_left = 140
-    margin_right = 210
-    margin_top = 40
+    margin_left = 135
+    margin_right = 195
+    margin_top = 35
     margin_bottom = 40
 
     plot_width = width - margin_left - margin_right
@@ -268,7 +300,7 @@ def build_horizontal_bar_chart_svg(benchmark_stats: List[Any]) -> str:
             f'stroke="#f1f5f9" stroke-width="1" />'
         )
         svg_parts.append(
-            f'<text x="{tx:.1f}" y="{margin_top + plot_height + 20}" text-anchor="middle" font-size="11" fill="#64748b">'
+            f'<text x="{tx:.1f}" y="{margin_top + plot_height + 20}" text-anchor="middle" font-size="11" fill="#64748b" style="font-variant-numeric: tabular-nums;">'
             f'₹{t:,}</text>'
         )
 
@@ -294,7 +326,7 @@ def build_horizontal_bar_chart_svg(benchmark_stats: List[Any]) -> str:
 
         # Strategy name label (left)
         svg_parts.append(
-            f'<text x="{margin_left - 12}" y="{bar_y + 19}" text-anchor="end" font-size="12" '
+            f'<text x="{margin_left - 12}" y="{bar_y + 18}" text-anchor="end" font-size="12" '
             f'font-weight="600" fill="#0f172a">{s.strategy_name}</text>'
         )
 
@@ -315,12 +347,12 @@ def build_horizontal_bar_chart_svg(benchmark_stats: List[Any]) -> str:
             )
             # Left cap
             svg_parts.append(
-                f'<line x1="{x_min_err:.1f}" y1="{mid_y - 6:.1f}" x2="{x_min_err:.1f}" y2="{mid_y + 6:.1f}" '
+                f'<line x1="{x_min_err:.1f}" y1="{mid_y - 5:.1f}" x2="{x_min_err:.1f}" y2="{mid_y + 5:.1f}" '
                 f'stroke="#0f172a" stroke-width="2" />'
             )
             # Right cap
             svg_parts.append(
-                f'<line x1="{x_max_err:.1f}" y1="{mid_y - 6:.1f}" x2="{x_max_err:.1f}" y2="{mid_y + 6:.1f}" '
+                f'<line x1="{x_max_err:.1f}" y1="{mid_y - 5:.1f}" x2="{x_max_err:.1f}" y2="{mid_y + 5:.1f}" '
                 f'stroke="#0f172a" stroke-width="2" />'
             )
             val_x = x_max_err + 10
@@ -331,7 +363,7 @@ def build_horizontal_bar_chart_svg(benchmark_stats: List[Any]) -> str:
 
         # Value label
         svg_parts.append(
-            f'<text x="{val_x:.1f}" y="{bar_y + 19}" font-size="12" font-weight="700" fill="#0f172a">'
+            f'<text x="{val_x:.1f}" y="{bar_y + 18}" font-size="12" font-weight="700" fill="#0f172a" style="font-variant-numeric: tabular-nums;">'
             f'₹{net_val:,.2f} <tspan font-size="11" font-weight="normal" fill="#64748b">({err_str})</tspan></text>'
         )
 
@@ -344,11 +376,14 @@ def generate_benchmark_html(
     sweep_results: Dict[int, Dict[str, float]],
     breakeven_penalty_inr: float,
     metadata: Dict[str, Any],
+    oracle_threshold_inr: float = 1351.22,
 ) -> str:
-    """Generates a complete, self-contained, standalone HTML report."""
+    """Generates a complete, self-contained, standalone HTML report with editorial styling and tabular numerals."""
     penalties_inr = sorted(list(sweep_results.keys()))
 
-    curve_svg = build_sensitivity_curve_svg(sweep_results, breakeven_penalty_inr, penalties_inr)
+    curve_svg = build_sensitivity_curve_svg(
+        sweep_results, breakeven_penalty_inr, penalties_inr, oracle_threshold_inr=oracle_threshold_inr
+    )
     barchart_svg = build_horizontal_bar_chart_svg(benchmark_stats)
 
     # Strategy names for sensitivity table
@@ -379,16 +414,16 @@ def generate_benchmark_html(
                     <strong>{s.strategy_name}</strong>
                 </div>
             </td>
-            <td class="text-right font-bold text-slate-900">₹{s.mean_net_paise/100:,.2f}</td>
-            <td class="text-right text-slate-700">{diff_str}</td>
-            <td class="text-right text-slate-600">₹{s.min_net_paise/100:,.0f} – ₹{s.max_net_paise/100:,.0f}</td>
-            <td class="text-right font-medium">{s.gross_recovery_rate_pct:.1f}%</td>
-            <td class="text-right font-medium">{s.decision_match_rate_pct:.1f}%</td>
-            <td class="text-right text-slate-600">₹{s.regret_paise/100:,.2f}</td>
+            <td class="text-right font-bold text-slate-900 num-cell">₹{s.mean_net_paise/100:,.2f}</td>
+            <td class="text-right text-slate-700 num-cell">{diff_str}</td>
+            <td class="text-right text-slate-600 num-cell">₹{s.min_net_paise/100:,.0f} – ₹{s.max_net_paise/100:,.0f}</td>
+            <td class="text-right font-medium num-cell">{s.gross_recovery_rate_pct:.1f}%</td>
+            <td class="text-right font-medium num-cell">{s.decision_match_rate_pct:.1f}%</td>
+            <td class="text-right text-slate-600 num-cell">₹{s.regret_paise/100:,.2f}</td>
             <td class="text-center">{v_badge}</td>
-            <td class="text-center font-medium">{s.retries_made}</td>
-            <td class="text-center font-medium">{s.contacts_sent}</td>
-            <td class="text-center font-medium">{s.escalations}</td>
+            <td class="text-center font-medium num-cell">{s.retries_made}</td>
+            <td class="text-center font-medium num-cell">{s.contacts_sent}</td>
+            <td class="text-center font-medium num-cell">{s.escalations}</td>
         </tr>
         """)
 
@@ -407,11 +442,11 @@ def generate_benchmark_html(
                 best_val = v
                 best_deployable = name
 
-        cells = [f'<td class="font-bold text-slate-900 text-center">₹{p:,}</td>']
+        cells = [f'<td class="font-bold text-slate-900 text-center num-cell">₹{p:,}</td>']
         for name in strategy_names:
             v = sweep_results[p].get(name, 0.0)
             val_cls = "text-danger font-bold" if v < 0 else "text-slate-700"
-            cells.append(f'<td class="text-right {val_cls}">₹{v:,.2f}</td>')
+            cells.append(f'<td class="text-right {val_cls} num-cell">₹{v:,.2f}</td>')
 
         dep_color = STRATEGY_COLORS.get(best_deployable, "#334155")
         cells.append(
@@ -439,10 +474,10 @@ def generate_benchmark_html(
                 </div>
             </td>
             <td class="text-center">{status_html}</td>
-            <td class="text-center font-bold">{s.violations}</td>
-            <td class="text-center">{s.retries_made}</td>
-            <td class="text-center">{s.contacts_sent}</td>
-            <td class="text-center">{s.escalations}</td>
+            <td class="text-center font-bold num-cell">{s.violations}</td>
+            <td class="text-center num-cell">{s.retries_made}</td>
+            <td class="text-center num-cell">{s.contacts_sent}</td>
+            <td class="text-center num-cell">{s.escalations}</td>
         </tr>
         """)
 
@@ -454,17 +489,20 @@ def generate_benchmark_html(
     <title>Razorpay Subscription Recovery Benchmark Report</title>
     <style>
         :root {{
-            --bg-body: #f8fafc;
-            --bg-card: #ffffff;
-            --border-card: #e2e8f0;
+            --bg-body: #ffffff;
             --text-primary: #0f172a;
             --text-secondary: #475569;
             --text-muted: #64748b;
-            --primary: #2563eb;
-            --success: #059669;
+            --accent: #2563eb;
+            --accent-light: #eff6ff;
+            --accent-border: #bfdbfe;
             --danger: #dc2626;
+            --danger-light: #fee2e2;
             --warning: #d97706;
+            --warning-light: #fffbeb;
             --purple: #7c3aed;
+            --border-light: #e2e8f0;
+            --border-subtle: #f1f5f9;
         }}
 
         * {{
@@ -474,67 +512,79 @@ def generate_benchmark_html(
         }}
 
         body {{
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
             background-color: var(--bg-body);
             color: var(--text-primary);
-            line-height: 1.5;
-            padding: 32px 24px;
+            font-size: 15px;
+            line-height: 1.6;
+            padding: 40px 20px;
             -webkit-font-smoothing: antialiased;
         }}
 
         .container {{
-            max-width: 1200px;
+            max-width: 920px;
             margin: 0 auto;
         }}
 
-        /* Header */
-        .report-header {{
-            background: var(--bg-card);
-            border: 1px solid var(--border-card);
-            border-radius: 12px;
-            padding: 28px 32px;
-            margin-bottom: 24px;
-            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
-        }}
-
-        .report-title-row {{
-            display: flex;
-            justify-content: space-between;
-            align-items: flex-start;
-            flex-wrap: wrap;
-            gap: 16px;
-            margin-bottom: 20px;
+        /* Typography */
+        h1, h2, h3 {{
+            font-family: Georgia, 'Times New Roman', serif;
+            color: var(--text-primary);
+            font-weight: 700;
+            letter-spacing: -0.01em;
         }}
 
         .report-title {{
-            font-size: 26px;
-            font-weight: 800;
-            color: var(--text-primary);
-            letter-spacing: -0.02em;
+            font-size: 28px;
+            line-height: 1.25;
+            margin-bottom: 6px;
         }}
 
         .report-subtitle {{
-            font-size: 14px;
+            font-size: 15px;
             color: var(--text-secondary);
-            margin-top: 4px;
+            font-style: italic;
+            font-family: Georgia, 'Times New Roman', serif;
+        }}
+
+        .section-title {{
+            font-size: 21px;
+            margin-bottom: 6px;
+        }}
+
+        .section-desc {{
+            font-size: 14.5px;
+            color: var(--text-secondary);
+            margin-bottom: 18px;
+        }}
+
+        /* Tabular figures for numbers */
+        .num-cell, .tabular, .kpi-value {{
+            font-variant-numeric: tabular-nums;
+        }}
+
+        /* Header block */
+        header.report-header {{
+            padding-bottom: 24px;
         }}
 
         .meta-chips {{
             display: flex;
             flex-wrap: wrap;
-            gap: 10px;
+            gap: 8px;
+            margin-top: 16px;
         }}
 
         .chip {{
             display: inline-flex;
             align-items: center;
-            padding: 6px 12px;
-            border-radius: 6px;
-            background: #f1f5f9;
+            padding: 5px 10px;
+            border-radius: 4px;
+            background: #f8fafc;
             font-size: 12.5px;
             color: var(--text-secondary);
-            font-weight: 500;
-            border: 1px solid #e2e8f0;
+            border: 1px solid var(--border-light);
+            font-variant-numeric: tabular-nums;
         }}
 
         .chip strong {{
@@ -543,68 +593,70 @@ def generate_benchmark_html(
         }}
 
         .composition-box {{
-            background: #eff6ff;
-            border: 1px solid #bfdbfe;
-            color: #1e40af;
+            background: #f8fafc;
+            border-left: 3px solid var(--accent);
+            color: #1e3a8a;
             font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
             font-size: 12.5px;
-            padding: 10px 14px;
-            border-radius: 6px;
+            padding: 9px 14px;
+            border-radius: 0 4px 4px 0;
             margin-top: 16px;
-            font-weight: 600;
         }}
 
-        /* Prominent Disclaimer Banner */
+        /* Section Rules */
+        .report-section {{
+            border-top: 1px solid var(--border-light);
+            padding-top: 32px;
+            margin-top: 36px;
+        }}
+
+        /* Prominent Simulation Disclaimer */
         .simulation-banner {{
-            background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%);
-            border: 1.5px solid #f59e0b;
-            border-left: 6px solid #d97706;
-            border-radius: 10px;
-            padding: 16px 20px;
-            margin-bottom: 28px;
+            background: #fffbeb;
+            border: 1px solid #fde68a;
+            border-left: 4px solid var(--warning);
+            border-radius: 4px;
+            padding: 14px 18px;
+            margin: 20px 0 28px 0;
             display: flex;
             align-items: center;
-            gap: 14px;
-            box-shadow: 0 2px 4px rgba(217, 119, 6, 0.08);
+            gap: 12px;
         }}
 
         .banner-icon {{
-            font-size: 22px;
+            font-size: 20px;
             flex-shrink: 0;
         }}
 
         .banner-text {{
-            font-size: 14.5px;
-            font-weight: 700;
+            font-size: 14px;
+            font-weight: 600;
             color: #92400e;
-            letter-spacing: -0.01em;
         }}
 
-        /* Cards */
-        .card {{
-            background: var(--bg-card);
-            border: 1px solid var(--border-card);
-            border-radius: 12px;
-            padding: 28px;
-            margin-bottom: 28px;
-            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
+        /* Key Finding Callout Box */
+        .key-finding-box {{
+            background: #f8fafc;
+            border: 1px solid var(--border-light);
+            border-left: 4px solid var(--accent);
+            border-radius: 0 6px 6px 0;
+            padding: 16px 20px;
+            margin-bottom: 22px;
         }}
 
-        .card-header {{
-            margin-bottom: 20px;
-        }}
-
-        .card-title {{
-            font-size: 20px;
+        .key-finding-tag {{
+            font-size: 12px;
             font-weight: 700;
-            color: var(--text-primary);
-            letter-spacing: -0.01em;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            color: var(--accent);
+            margin-bottom: 4px;
         }}
 
-        .card-desc {{
-            font-size: 13.5px;
-            color: var(--text-secondary);
-            margin-top: 4px;
+        .key-finding-body {{
+            font-size: 14.5px;
+            color: #1e293b;
+            line-height: 1.55;
         }}
 
         /* Chart container */
@@ -612,15 +664,25 @@ def generate_benchmark_html(
             width: 100%;
             overflow-x: auto;
             background: #ffffff;
-            border: 1px solid #f1f5f9;
-            border-radius: 8px;
-            padding: 12px;
+            border: 1px solid var(--border-light);
+            border-radius: 6px;
+            padding: 14px;
+        }}
+
+        .chart-caption {{
+            font-size: 13px;
+            color: var(--text-muted);
+            margin-top: 10px;
+            font-style: italic;
+            text-align: center;
         }}
 
         /* Tables */
         .table-responsive {{
             width: 100%;
             overflow-x: auto;
+            border: 1px solid var(--border-light);
+            border-radius: 6px;
         }}
 
         table {{
@@ -634,17 +696,21 @@ def generate_benchmark_html(
             background: #f8fafc;
             color: var(--text-secondary);
             font-weight: 600;
-            padding: 12px 14px;
-            border-bottom: 1.5px solid var(--border-card);
-            text-transform: uppercase;
+            padding: 10px 12px;
+            border-bottom: 1.5px solid var(--border-light);
             font-size: 11px;
+            text-transform: uppercase;
             letter-spacing: 0.04em;
         }}
 
         td {{
-            padding: 12px 14px;
-            border-bottom: 1px solid #f1f5f9;
+            padding: 10px 12px;
+            border-bottom: 1px solid var(--border-subtle);
             color: var(--text-primary);
+        }}
+
+        tr:last-child td {{
+            border-bottom: none;
         }}
 
         tr:hover td {{
@@ -653,8 +719,8 @@ def generate_benchmark_html(
 
         tr.highlight-row td {{
             background-color: #fffbeb !important;
-            border-top: 1.5px solid #fde68a;
-            border-bottom: 1.5px solid #fde68a;
+            border-top: 1px solid #fde68a;
+            border-bottom: 1px solid #fde68a;
         }}
 
         .text-left {{ text-align: left; }}
@@ -664,7 +730,7 @@ def generate_benchmark_html(
         .font-medium {{ font-weight: 500; }}
 
         .text-danger {{ color: var(--danger); }}
-        .text-success {{ color: var(--success); }}
+        .text-success {{ color: #15803d; }}
         .text-slate-900 {{ color: #0f172a; }}
         .text-slate-700 {{ color: #334155; }}
         .text-slate-600 {{ color: #475569; }}
@@ -677,8 +743,8 @@ def generate_benchmark_html(
         }}
 
         .strategy-dot {{
-            width: 10px;
-            height: 10px;
+            width: 9px;
+            height: 9px;
             border-radius: 50%;
             display: inline-block;
         }}
@@ -687,9 +753,9 @@ def generate_benchmark_html(
         .badge-success {{
             background: #dcfce7;
             color: #15803d;
-            font-size: 11.5px;
+            font-size: 11px;
             font-weight: 700;
-            padding: 4px 8px;
+            padding: 3px 7px;
             border-radius: 4px;
             display: inline-block;
         }}
@@ -697,9 +763,9 @@ def generate_benchmark_html(
         .badge-danger {{
             background: #fee2e2;
             color: #b91c1c;
-            font-size: 11.5px;
+            font-size: 11px;
             font-weight: 700;
-            padding: 4px 8px;
+            padding: 3px 7px;
             border-radius: 4px;
             display: inline-block;
         }}
@@ -707,46 +773,47 @@ def generate_benchmark_html(
         .badge-neutral {{
             background: #f1f5f9;
             color: #475569;
-            font-size: 11.5px;
+            font-size: 11px;
             font-weight: 600;
-            padding: 4px 8px;
+            padding: 3px 7px;
             border-radius: 4px;
             display: inline-block;
         }}
 
         .badge-deployable {{
-            font-size: 11.5px;
+            font-size: 11px;
             font-weight: 700;
-            padding: 4px 10px;
-            border-radius: 6px;
+            padding: 3px 8px;
+            border-radius: 4px;
             display: inline-block;
             text-transform: capitalize;
         }}
 
         .footnote {{
-            font-size: 12px;
+            font-size: 12.5px;
             color: var(--text-muted);
-            margin-top: 12px;
+            margin-top: 10px;
             font-style: italic;
+            line-height: 1.5;
         }}
 
         /* Compliance Grid */
         .compliance-grid {{
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-            gap: 16px;
-            margin-bottom: 24px;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 14px;
+            margin-bottom: 22px;
         }}
 
         .compliance-kpi {{
             background: #f8fafc;
-            border: 1px solid #e2e8f0;
-            border-radius: 8px;
+            border: 1px solid var(--border-light);
+            border-radius: 6px;
             padding: 16px;
         }}
 
         .kpi-title {{
-            font-size: 12px;
+            font-size: 11.5px;
             text-transform: uppercase;
             letter-spacing: 0.04em;
             color: var(--text-secondary);
@@ -764,6 +831,7 @@ def generate_benchmark_html(
             font-size: 12px;
             color: var(--text-muted);
             margin-top: 4px;
+            line-height: 1.4;
         }}
     </style>
 </head>
@@ -771,19 +839,15 @@ def generate_benchmark_html(
     <div class="container">
         <!-- 2.a Header -->
         <header class="report-header">
-            <div class="report-title-row">
-                <div>
-                    <h1 class="report-title">Subscription Recovery Benchmark Report</h1>
-                    <p class="report-subtitle">Razorpay Buildathon Track 3: Failed Subscription Recovery Agent</p>
-                </div>
-                <div class="meta-chips">
-                    <span class="chip">Batch Size: <strong>{metadata['batch_size']} records</strong></span>
-                    <span class="chip">Seeds: <strong>{metadata['seeds']} draws</strong></span>
-                    <span class="chip">Revenue at Risk: <strong>₹{metadata['total_at_risk_paise']/100:,.2f}</strong></span>
-                    <span class="chip">Base Penalty: <strong>₹{metadata['penalty_paise']/100:,.0f} / violation</strong></span>
-                    <span class="chip">Policy Version: <strong>{metadata['policy_version']}</strong></span>
-                    <span class="chip">Generated: <strong>{metadata['timestamp']}</strong></span>
-                </div>
+            <h1 class="report-title">Subscription Recovery Benchmark Report</h1>
+            <p class="report-subtitle">Razorpay Buildathon Track 3: Autonomous Recovery Agent Evaluation</p>
+            <div class="meta-chips">
+                <span class="chip">Batch: <strong>{metadata['batch_size']} records</strong></span>
+                <span class="chip">Seeds: <strong>{metadata['seeds']} draws</strong></span>
+                <span class="chip">Revenue at Risk: <strong>₹{metadata['total_at_risk_paise']/100:,.2f}</strong></span>
+                <span class="chip">Base Penalty: <strong>₹{metadata['penalty_paise']/100:,.0f} / violation</strong></span>
+                <span class="chip">Policy Version: <strong>{metadata['policy_version']}</strong></span>
+                <span class="chip">Generated: <strong>{metadata['timestamp']}</strong></span>
             </div>
             <div class="composition-box">
                 {metadata['composition_line']}
@@ -799,41 +863,42 @@ def generate_benchmark_html(
         </div>
 
         <!-- 2.c THE PENALTY SENSITIVITY CURVE - Centrepiece -->
-        <section class="card">
-            <div class="card-header">
-                <h2 class="card-title">The Penalty Sensitivity Curve (Centrepiece)</h2>
-                <p class="card-desc">
-                    Mean net recovery as regulatory non-compliance penalty increases from ₹0 to ₹5,000 per violation.
-                    Notice the exact break-even crossing point at <strong>₹{breakeven_penalty_inr:,.2f}</strong> where
-                    <strong>agent_rules</strong> overtakes <strong>naive_rules</strong>, and the steep plunge of unguarded <strong>always_retry</strong> into severe losses.
-                </p>
+        <section class="report-section">
+            <h2 class="section-title">The Penalty Sensitivity Curve (Centrepiece)</h2>
+            <p class="section-desc">
+                Mean net recovery across non-compliance penalties from ₹0 to ₹5,000 per violation.
+            </p>
+
+            <div class="key-finding-box">
+                <div class="key-finding-tag">Key Finding</div>
+                <div class="key-finding-body">
+                    Compliance-guarded recovery (<strong>agent_rules</strong>) overtakes unconstrained retrying (<strong>naive_rules</strong>) at an exact penalty of <strong>₹{breakeven_penalty_inr:,.2f}</strong> per violation. Above <strong>₹{oracle_threshold_inr:,.2f}</strong>, even an unconstrained profit-maximizing Oracle with full model knowledge completely eliminates all violations, verifying that regulatory penalties enforce optimal compliant behavior.
+                </div>
             </div>
+
             <div class="chart-box">
                 {curve_svg}
             </div>
+            <p class="chart-caption">Lines show mean net recovery at each penalty level. See the sensitivity table for exact values.</p>
         </section>
 
-        <!-- 2.d Horizontal Bar Chart at Rs 500 Penalty -->
-        <section class="card">
-            <div class="card-header">
-                <h2 class="card-title">Mean Net Recovery by Strategy (₹500 Base Penalty)</h2>
-                <p class="card-desc">
-                    Evaluated across {metadata['seeds']} seeded draws with paired standard errors (±SE) relative to agent_rules.
-                </p>
-            </div>
+        <!-- 2.d Horizontal Bar Chart at Base Penalty -->
+        <section class="report-section">
+            <h2 class="section-title">Mean Net Recovery by Strategy (₹500 Base Penalty)</h2>
+            <p class="section-desc">
+                Evaluated across {metadata['seeds']} seeded draws with paired standard errors (±SE) relative to agent_rules.
+            </p>
             <div class="chart-box">
                 {barchart_svg}
             </div>
         </section>
 
         <!-- 2.e Full Benchmark Table -->
-        <section class="card">
-            <div class="card-header">
-                <h2 class="card-title">Multi-Strategy Benchmark Performance Table</h2>
-                <p class="card-desc">
-                    Comprehensive accounting of net revenue, paired statistical differences, decision consistency, and regulatory metrics.
-                </p>
-            </div>
+        <section class="report-section">
+            <h2 class="section-title">Multi-Strategy Benchmark Performance Table</h2>
+            <p class="section-desc">
+                Comprehensive accounting of net revenue, paired statistical differences, decision consistency, and regulatory metrics.
+            </p>
             <div class="table-responsive">
                 <table>
                     <thead>
@@ -860,13 +925,11 @@ def generate_benchmark_html(
         </section>
 
         <!-- 2.f Full Sensitivity Table -->
-        <section class="card">
-            <div class="card-header">
-                <h2 class="card-title">Compliance Penalty Sensitivity Table</h2>
-                <p class="card-desc">
-                    Net recovery trajectory across regulatory penalty tiers. Break-even threshold is <strong>₹{breakeven_penalty_inr:,.2f}</strong>.
-                </p>
-            </div>
+        <section class="report-section">
+            <h2 class="section-title">Compliance Penalty Sensitivity Table</h2>
+            <p class="section-desc">
+                Net recovery trajectory across regulatory penalty tiers. Break-even threshold is <strong>₹{breakeven_penalty_inr:,.2f}</strong>; Oracle compliance threshold is <strong>₹{oracle_threshold_inr:,.2f}</strong>.
+            </p>
             <div class="table-responsive">
                 <table>
                     <thead>
@@ -882,18 +945,17 @@ def generate_benchmark_html(
                 </table>
             </div>
             <p class="footnote">
-                *Note: Oracle represents the theoretical upper bound reading the hidden recovery matrix directly and is excluded from 'Best Deployable Strategy'.
+                *Note on Best Deployable Strategy: Oracle represents the theoretical upper bound reading the hidden recovery matrix directly and is excluded from deployable selections.<br>
+                *Note on Oracle compliance threshold: On this 40-record batch the threshold of ₹{oracle_threshold_inr:,.2f} is driven by a single record (pay_Ex11kLmNoPqR10, Rs 9,999, gateway_timeout at the retry cap), so it is batch-specific, not a general constant.
             </p>
         </section>
 
         <!-- 2.g Compliance Panel -->
-        <section class="card">
-            <div class="card-header">
-                <h2 class="card-title">Regulatory Compliance & Operational Panel</h2>
-                <p class="card-desc">
-                    Enforcement of RBI e-mandate circulars, AFA challenge thresholds, and per-method retry caps.
-                </p>
-            </div>
+        <section class="report-section">
+            <h2 class="section-title">Regulatory Compliance & Operational Panel</h2>
+            <p class="section-desc">
+                Encodes RBI pre-debit notification and AFA threshold rules, plus per-method retry caps.
+            </p>
 
             <div class="compliance-grid">
                 <div class="compliance-kpi">

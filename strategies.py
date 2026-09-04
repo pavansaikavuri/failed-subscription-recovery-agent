@@ -18,7 +18,15 @@ from outcome_model import (
     check_compliance_violation,
     get_effective_probability,
 )
-from pipeline import get_retry_cap, CONFIG, CONFIDENCE_THRESHOLD, AFA_THRESHOLD_INR, HARD_DECLINE_REASONS
+from pipeline import (
+    get_retry_cap,
+    CONFIG,
+    CONFIDENCE_THRESHOLD,
+    AFA_THRESHOLD_INR,
+    HARD_DECLINE_REASONS,
+    ESCALATION_COST_PAISE,
+    LTV_ESCALATION_THRESHOLD,
+)
 from security import sanitize_notes
 
 load_dotenv(Path(__file__).parent / ".env")
@@ -253,6 +261,49 @@ def strategy_naive_rules(record: FailedPayment) -> InterventionDecision:
         )
 
 
+def should_escalate(record: FailedPayment) -> Tuple[bool, str, str]:
+    """
+    Evaluates expected value of human escalation:
+    EV = (escalation_recovery_probability * amount_paise) - escalation_cost_paise
+    
+    1. If EV > 0: escalate normally ('positive_ev').
+    2. If EV <= 0: check customer_ltv_paise. If LTV > ltv_escalation_threshold,
+       escalate anyway to protect the high-value relationship ('escalated_for_ltv_protection').
+    3. Otherwise: downgrade to best positive-EV compliant non-escalation action
+       ('escalation_suppressed_negative_ev').
+    """
+    prob = RECOVERY_MATRIX.get(record.failure_reason, {}).get("escalate_to_human", 0.0)
+    expected_recovery_paise = int(prob * record.amount_paise)
+    net_ev = expected_recovery_paise - ESCALATION_COST_PAISE
+
+    if net_ev > 0:
+        return True, "positive_ev", "escalate_to_human"
+
+    if record.customer_ltv_paise > LTV_ESCALATION_THRESHOLD:
+        return True, "escalated_for_ltv_protection", "escalate_to_human"
+
+    # Determine best positive-EV compliant digital action
+    candidate_actions = [
+        "send_card_update_link", "send_upi_pin_nudge", "request_mandate_reissue",
+        "resend_pre_debit_notice", "stop_and_writeoff"
+    ]
+    retry_cap = get_retry_cap(record.payment_method)
+    best_fallback = "stop_and_writeoff"
+    best_ev = -1
+
+    for act in candidate_actions:
+        if check_compliance_violation(record, act, retry_cap=retry_cap):
+            continue
+        act_prob = get_effective_probability(record, act)
+        act_cost = ACTION_COSTS.get(act, 0)
+        act_net = int(act_prob * record.amount_paise) - act_cost
+        if act_net > best_ev:
+            best_ev = act_net
+            best_fallback = act
+
+    return False, "escalation_suppressed_negative_ev", best_fallback
+
+
 # -------------------------------------------------------------------------
 # Strategy 5: Agent Rules (Fully Guarded Deterministic Engine)
 # -------------------------------------------------------------------------
@@ -263,7 +314,8 @@ def strategy_agent_rules(record: FailedPayment) -> InterventionDecision:
     2. Per-method retry caps
     3. Hard decline enforcement
     4. Compliance-aligned action routing
-    5. Low-confidence dispute overrides
+    5. Expected-value gate on human escalation (LTV-aware)
+    6. Low-confidence dispute overrides
     """
     # Guard 1: Reconciliation check
     if getattr(record, "payment_state", "confirmed_failed") != "confirmed_failed":
@@ -309,29 +361,61 @@ def strategy_agent_rules(record: FailedPayment) -> InterventionDecision:
 
     # Guard 3: Hard decline reasons
     if record.failure_reason in HARD_DECLINE_REASONS:
-        return InterventionDecision(
-            chosen_action="escalate_to_human",
-            reason=f"Hard decline reason '{record.failure_reason}'; non-retryable per policy.",
-            confidence=0.80,
-            max_retries_left=0,
-            escalate=True,
-            decision_source="guard",
-            guard_triggered="hard_decline",
-            model_version="guard-v1",
-        )
+        esc_ok, esc_reason, fallback_act = should_escalate(record)
+        if esc_ok:
+            reason_str = f"Hard decline reason '{record.failure_reason}'; non-retryable per policy."
+            if esc_reason == "escalated_for_ltv_protection":
+                reason_str += " [escalated_for_ltv_protection]"
+            return InterventionDecision(
+                chosen_action="escalate_to_human",
+                reason=reason_str,
+                confidence=0.80,
+                max_retries_left=0,
+                escalate=True,
+                decision_source="guard",
+                guard_triggered="hard_decline",
+                model_version="guard-v1",
+            )
+        else:
+            return InterventionDecision(
+                chosen_action=fallback_act,
+                reason=f"Hard decline reason '{record.failure_reason}'; non-retryable per policy [escalation_suppressed_negative_ev].",
+                confidence=0.80,
+                max_retries_left=0,
+                escalate=False,
+                decision_source="guard",
+                guard_triggered="hard_decline",
+                model_version="guard-v1",
+            )
 
     # Guard 4: Dispute / fraud check
     if "dispute" in record.notes.lower() or "fraud" in record.notes.lower():
-        return InterventionDecision(
-            chosen_action="escalate_to_human",
-            reason="Customer dispute or potential fraud suspected; requires manual review.",
-            confidence=0.55,
-            max_retries_left=0,
-            escalate=True,
-            decision_source="guard",
-            guard_triggered="dispute_override",
-            model_version="guard-v1",
-        )
+        esc_ok, esc_reason, fallback_act = should_escalate(record)
+        if esc_ok:
+            reason_str = "Customer dispute or potential fraud suspected; requires manual review."
+            if esc_reason == "escalated_for_ltv_protection":
+                reason_str += " [escalated_for_ltv_protection]"
+            return InterventionDecision(
+                chosen_action="escalate_to_human",
+                reason=reason_str,
+                confidence=0.55,
+                max_retries_left=0,
+                escalate=True,
+                decision_source="guard",
+                guard_triggered="dispute_override",
+                model_version="guard-v1",
+            )
+        else:
+            return InterventionDecision(
+                chosen_action=fallback_act,
+                reason="Customer dispute or potential fraud suspected [escalation_suppressed_negative_ev].",
+                confidence=0.55,
+                max_retries_left=0,
+                escalate=False,
+                decision_source="guard",
+                guard_triggered="dispute_override",
+                model_version="guard-v1",
+            )
 
     reason = record.failure_reason
 
@@ -391,16 +475,32 @@ def strategy_agent_rules(record: FailedPayment) -> InterventionDecision:
             model_version="rules-v1",
         )
     elif reason == "afa_required_not_completed":
-        return InterventionDecision(
-            chosen_action="escalate_to_human",
-            reason=f"AFA challenge abandoned; requires customer authentication under RBI threshold (₹{AFA_THRESHOLD_INR:,.0f}).",
-            confidence=0.65,
-            max_retries_left=0,
-            escalate=True,
-            decision_source="rules",
-            guard_triggered=None,
-            model_version="rules-v1",
-        )
+        esc_ok, esc_reason, fallback_act = should_escalate(record)
+        if esc_ok:
+            reason_str = f"AFA challenge abandoned; requires customer authentication under RBI threshold (₹{AFA_THRESHOLD_INR:,.0f})."
+            if esc_reason == "escalated_for_ltv_protection":
+                reason_str += " [escalated_for_ltv_protection]"
+            return InterventionDecision(
+                chosen_action="escalate_to_human",
+                reason=reason_str,
+                confidence=0.65,
+                max_retries_left=0,
+                escalate=True,
+                decision_source="rules",
+                guard_triggered=None,
+                model_version="rules-v1",
+            )
+        else:
+            return InterventionDecision(
+                chosen_action=fallback_act,
+                reason=f"AFA challenge abandoned, but escalation suppressed: negative EV on micro-ticket [escalation_suppressed_negative_ev].",
+                confidence=0.65,
+                max_retries_left=0,
+                escalate=False,
+                decision_source="rules",
+                guard_triggered=None,
+                model_version="rules-v1",
+            )
     elif reason == "gateway_timeout":
         return InterventionDecision(
             chosen_action="retry_now",
@@ -413,16 +513,32 @@ def strategy_agent_rules(record: FailedPayment) -> InterventionDecision:
             model_version="rules-v1",
         )
     else:
-        return InterventionDecision(
-            chosen_action="escalate_to_human",
-            reason="Complex or unclassified failure reason; escalated to manual review.",
-            confidence=0.50,
-            max_retries_left=0,
-            escalate=True,
-            decision_source="rules",
-            guard_triggered=None,
-            model_version="rules-v1",
-        )
+        esc_ok, esc_reason, fallback_act = should_escalate(record)
+        if esc_ok:
+            reason_str = "Complex or unclassified failure reason; escalated to manual review."
+            if esc_reason == "escalated_for_ltv_protection":
+                reason_str += " [escalated_for_ltv_protection]"
+            return InterventionDecision(
+                chosen_action="escalate_to_human",
+                reason=reason_str,
+                confidence=0.50,
+                max_retries_left=0,
+                escalate=True,
+                decision_source="rules",
+                guard_triggered=None,
+                model_version="rules-v1",
+            )
+        else:
+            return InterventionDecision(
+                chosen_action=fallback_act,
+                reason="Complex failure reason, but escalation suppressed: negative EV [escalation_suppressed_negative_ev].",
+                confidence=0.50,
+                max_retries_left=0,
+                escalate=False,
+                decision_source="rules",
+                guard_triggered=None,
+                model_version="rules-v1",
+            )
 
 
 # -------------------------------------------------------------------------
@@ -492,6 +608,17 @@ def strategy_agent_llm(
         dec.decision_source = "llm"
         dec.guard_triggered = None
         dec.model_version = "gemini-3.6-flash"
+
+        # Apply expected-value gate to cached LLM escalations
+        if dec.chosen_action == "escalate_to_human" or dec.escalate:
+            esc_ok, esc_reason, fallback_act = should_escalate(record)
+            if not esc_ok:
+                dec.chosen_action = fallback_act
+                dec.escalate = False
+                dec.reason = f"{dec.reason} [escalation_suppressed_negative_ev]"
+            elif esc_reason == "escalated_for_ltv_protection":
+                dec.reason = f"{dec.reason} [escalated_for_ltv_protection]"
+
         return dec
 
     # If cache-only mode (e.g., benchmark without API key), handle cache miss via rule fallback
@@ -515,6 +642,17 @@ def strategy_agent_llm(
         decision.decision_source = "llm"
         decision.guard_triggered = None
         decision.model_version = "gemini-3.6-flash"
+
+        # Apply expected-value gate to live LLM escalations
+        if decision.chosen_action == "escalate_to_human" or decision.escalate:
+            esc_ok, esc_reason, fallback_act = should_escalate(record)
+            if not esc_ok:
+                decision.chosen_action = fallback_act
+                decision.escalate = False
+                decision.reason = f"{decision.reason} [escalation_suppressed_negative_ev]"
+            elif esc_reason == "escalated_for_ltv_protection":
+                decision.reason = f"{decision.reason} [escalated_for_ltv_protection]"
+
         LLM_CACHE[record.id] = decision.model_dump()
         save_llm_cache(LLM_CACHE)
         return decision

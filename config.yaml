@@ -33,3 +33,7 @@ communication:
 
 dedupe:
   ttl_hours: 72                                      # Webhook idempotency window
+
+escalation_policy:
+  escalation_cost_paise: 15000                       # Human escalation support cost (₹150)
+  ltv_escalation_threshold: 2000000                  # LTV protection threshold (₹20,000)

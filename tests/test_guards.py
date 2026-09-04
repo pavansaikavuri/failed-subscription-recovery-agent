@@ -392,3 +392,102 @@ def test_prompt_injection_forces_human_escalation():
     assert decision.escalate is True
     assert decision.guard_triggered == "prompt_injection"
     assert decision.injection_flagged is True
+
+
+def test_negative_ev_escalation_suppressed_on_low_ltv():
+    """Low-ticket negative-EV escalations are suppressed and downgraded when customer LTV is below threshold."""
+    record = FailedPayment(
+        id="pay_test_ev_low",
+        merchant_id="mer_01",
+        customer_id="cust_low",
+        amount_paise=29900,  # ₹299.00 -> EV = (0.22 * 299) - 150 = -₹84.22
+        currency="INR",
+        failure_reason="issuer_declined",
+        attempt_count=1,
+        last_attempt_at=datetime(2026, 9, 1, 10, 0, 0),
+        payment_method="card",
+        customer_ltv_paise=500000,  # ₹5,000 LTV < ₹20,000 threshold
+        notes="Card declined by issuing bank",
+        payment_state="confirmed_failed",
+    )
+    decision = strategy_agent_rules(record)
+
+    assert decision.chosen_action != "escalate_to_human"
+    assert decision.chosen_action == "send_card_update_link"
+    assert decision.escalate is False
+    assert "escalation_suppressed_negative_ev" in decision.reason
+
+
+def test_negative_ev_escalation_preserved_for_high_ltv():
+    """Negative-EV escalations are preserved when customer LTV exceeds the protection threshold."""
+    record = FailedPayment(
+        id="pay_test_ev_high",
+        merchant_id="mer_01",
+        customer_id="cust_high",
+        amount_paise=29900,  # ₹299.00 (negative EV on single invoice)
+        currency="INR",
+        failure_reason="issuer_declined",
+        attempt_count=1,
+        last_attempt_at=datetime(2026, 9, 1, 10, 0, 0),
+        payment_method="card",
+        customer_ltv_paise=2500000,  # ₹25,000 LTV >= ₹20,000 threshold
+        notes="Card declined by issuing bank",
+        payment_state="confirmed_failed",
+    )
+    decision = strategy_agent_rules(record)
+
+    assert decision.chosen_action == "escalate_to_human"
+    assert decision.escalate is True
+    assert "escalated_for_ltv_protection" in decision.reason
+
+
+def test_baselines_unaffected_by_ev_gate():
+    """Baseline strategies remain unconstrained and unaffected by the EV gate."""
+    from strategies import strategy_naive_rules, strategy_always_retry, strategy_message_only
+
+    low_ticket = FailedPayment(
+        id="pay_test_ev_baseline",
+        merchant_id="mer_01",
+        customer_id="cust_low",
+        amount_paise=29900,
+        currency="INR",
+        failure_reason="issuer_declined",
+        attempt_count=1,
+        last_attempt_at=datetime(2026, 9, 1, 10, 0, 0),
+        payment_method="card",
+        customer_ltv_paise=500000,
+        notes="Card declined by issuing bank",
+        payment_state="confirmed_failed",
+    )
+
+    # naive_rules always escalates issuer_declined, ignoring EV and LTV
+    d_naive = strategy_naive_rules(low_ticket)
+    assert d_naive.chosen_action == "escalate_to_human"
+    assert d_naive.escalate is True
+
+    # always_retry always retries
+    d_retry = strategy_always_retry(low_ticket)
+    assert d_retry.chosen_action == "retry_now"
+
+    # message_only nudges/messages
+    d_msg = strategy_message_only(low_ticket)
+    assert d_msg.chosen_action == "send_card_update_link"
+
+
+def test_agent_rules_zero_violations_with_ev_gate():
+    """agent_rules with EV gate active maintains 100% regulatory compliance across the entire sample batch."""
+    from pipeline import BATCH, VALID_FAILURE_REASONS
+    from outcome_model import check_compliance_violation
+
+    valid_records = [
+        FailedPayment(**r) if isinstance(r, dict) else r
+        for r in BATCH
+        if (r.get("failure_reason") if isinstance(r, dict) else r.failure_reason) in VALID_FAILURE_REASONS
+    ]
+
+    for rec in valid_records:
+        decision = strategy_agent_rules(rec)
+        retry_cap = get_retry_cap(rec.payment_method)
+        is_viol = check_compliance_violation(rec, decision.chosen_action, retry_cap=retry_cap)
+        assert is_viol is False, f"Violation detected for record {rec.id}: {decision.chosen_action}"
+

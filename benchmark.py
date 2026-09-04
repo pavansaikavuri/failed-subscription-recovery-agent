@@ -253,7 +253,7 @@ def run_benchmark(
             f.write(md_table + "\n")
 
         if include_sweep:
-            sweep_md, sweep_results, breakeven_penalty_inr = run_penalty_sweep(
+            sweep_md, sweep_results, breakeven_penalty_inr, oracle_threshold_inr = run_penalty_sweep(
                 batch=batch, n_seeds=n_seeds, save_to_file=True, verbose=verbose, return_details=True
             )
             full_output += "\n\n" + sweep_md
@@ -267,12 +267,14 @@ def run_benchmark(
                     "composition_line": composition_line,
                     "policy_version": POLICY_VERSION,
                     "timestamp": timestamp_str,
+                    "oracle_threshold_inr": oracle_threshold_inr,
                 }
                 html_content = generate_benchmark_html(
                     benchmark_stats=benchmark_stats,
                     sweep_results=sweep_results,
                     breakeven_penalty_inr=breakeven_penalty_inr,
                     metadata=metadata,
+                    oracle_threshold_inr=oracle_threshold_inr,
                 )
                 html_path = Path(html_report_path)
                 with open(html_path, "w", encoding="utf-8") as f:
@@ -286,6 +288,49 @@ def run_benchmark(
     return benchmark_stats, full_output
 
 
+def derive_oracle_compliance_threshold(valid_records: List[FailedPayment]) -> float:
+    """
+    Analytically derives the exact compliance penalty threshold above which an
+    unconstrained profit-maximizing Oracle with full model knowledge stops violating.
+    Threshold = max_r (max_{a in viol} E[Net(r, a, 0)] - max_{a in comp} E[Net(r, a, 0)])
+    """
+    from outcome_model import ACTION_COSTS, check_compliance_violation, get_effective_probability
+    from pipeline import get_retry_cap
+
+    all_actions = [
+        "retry_now",
+        "send_upi_pin_nudge",
+        "request_mandate_reissue",
+        "send_card_update_link",
+        "escalate_to_human",
+        "stop_and_writeoff",
+        "resend_pre_debit_notice",
+    ]
+
+    max_threshold_paise = 0.0
+    for r in valid_records:
+        retry_cap = get_retry_cap(r.payment_method)
+        best_viol_ev = -float("inf")
+        best_comp_ev = -float("inf")
+        for act in all_actions:
+            prob = get_effective_probability(r, act)
+            cost = ACTION_COSTS.get(act, 0)
+            ev_zero = prob * r.amount_paise - cost
+            viol = check_compliance_violation(r, act, retry_cap=retry_cap)
+            if viol:
+                if ev_zero > best_viol_ev:
+                    best_viol_ev = ev_zero
+            else:
+                if ev_zero > best_comp_ev:
+                    best_comp_ev = ev_zero
+        if best_viol_ev > best_comp_ev:
+            diff = best_viol_ev - best_comp_ev
+            if diff > max_threshold_paise:
+                max_threshold_paise = diff
+
+    return max_threshold_paise / 100.0
+
+
 def run_penalty_sweep(
     batch: List[dict] = BATCH,
     n_seeds: int = 200,
@@ -296,7 +341,8 @@ def run_penalty_sweep(
 ) -> Any:
     """
     Evaluates all 7 strategies across varying regulatory violation penalty levels
-    and dynamically derives the break-even penalty where agent_rules overtakes naive_rules.
+    and dynamically derives the break-even penalty where agent_rules overtakes naive_rules,
+    as well as the Oracle compliance threshold.
     """
     if verbose:
         print(f"\n==================================================================")
@@ -337,16 +383,27 @@ def run_penalty_sweep(
     else:
         breakeven_penalty_inr = 0.0
 
+    valid_records = [
+        FailedPayment(**r) if isinstance(r, dict) else r
+        for r in batch
+        if (r.get("failure_reason") if isinstance(r, dict) else r.failure_reason) in VALID_FAILURE_REASONS
+    ]
+    oracle_threshold_inr = derive_oracle_compliance_threshold(valid_records)
+
     if verbose:
         print(f"Exact Break-Even Penalty: ₹{breakeven_penalty_inr:,.2f}")
-        print(f"(At penalties >= ₹{breakeven_penalty_inr:,.2f}, agent_rules outperforms naive_rules net of compliance risk)\n")
+        print(f"(At penalties >= ₹{breakeven_penalty_inr:,.2f}, agent_rules outperforms naive_rules net of compliance risk)")
+        print(f"Oracle Compliance Threshold: ₹{oracle_threshold_inr:,.2f}")
+        print(f"(The penalty above which an unconstrained profit-maximiser with full knowledge of the outcome model stops violating)\n")
 
     # Render Markdown Table for Penalty Sweep (Oracle is reference only, not a deployable strategy)
     deployable_names = [name for name in strategy_names if name != "oracle"]
     header_cols = ["Penalty (₹)"] + [f"**{name}**" for name in strategy_names] + ["Best Deployable Strategy"]
     sweep_lines = [
         "## Compliance Penalty Sensitivity\n",
-        f"**Exact Break-Even Penalty:** ₹{breakeven_penalty_inr:,.2f} per violation (agent_rules overtakes naive_rules)\n",
+        f"- **Exact Break-Even Penalty:** ₹{breakeven_penalty_inr:,.2f} per violation (agent_rules overtakes naive_rules)",
+        f"- **Oracle Compliance Threshold:** ₹{oracle_threshold_inr:,.2f} per violation (the penalty above which an unconstrained profit-maximiser with full knowledge of the outcome model stops violating)\n",
+        f"*Note on Oracle compliance threshold: On this 40-record batch the threshold of ₹{oracle_threshold_inr:,.2f} is driven by a single record (pay_Ex11kLmNoPqR10, Rs 9,999, gateway_timeout at the retry cap), so it is batch-specific, not a general constant.*\n",
         "| " + " | ".join(header_cols) + " |",
         "| " + " | ".join([":---:"] * len(header_cols)) + " |",
     ]
@@ -378,7 +435,7 @@ def run_penalty_sweep(
                 f.write("\n\n" + sweep_table + "\n")
 
     if return_details:
-        return sweep_table, sweep_results, breakeven_penalty_inr
+        return sweep_table, sweep_results, breakeven_penalty_inr, oracle_threshold_inr
     return sweep_table
 
 
