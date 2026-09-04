@@ -1,0 +1,28 @@
+{
+  "entity": "event",
+  "account_id": "acc_merch_live_01",
+  "event": "payment.failed",
+  "contains": ["payment"],
+  "event_id": "evt_fail_insufficient_funds_01",
+  "created_at": 1725440010,
+  "payload": {
+    "payment": {
+      "entity": {
+        "id": "pay_test_if_01",
+        "amount": 199900,
+        "currency": "INR",
+        "status": "failed",
+        "method": "upi",
+        "error_code": "BAD_REQUEST_ERROR",
+        "error_description": "Payment failed due to insufficient funds in customer bank account",
+        "error_reason": "insufficient_funds",
+        "attempt_count": 1,
+        "customer_id": "cust_delhi_101",
+        "notes": {
+          "customer_ltv": 1500000,
+          "subscription_plan": "pro_monthly"
+        }
+      }
+    }
+  }
+}

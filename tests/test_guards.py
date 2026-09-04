@@ -150,3 +150,140 @@ def test_retry_cap_differs_by_payment_method():
     assert card_cap == 4
     assert upi_cap != card_cap
     assert default_cap == 3
+
+
+def test_fail_closed_never_emits_money_moving_action_when_model_absent():
+    """Fail-closed principle: When the model is absent or cache missed, never emit an autonomous retry."""
+    from strategies import strategy_agent_llm
+    record = FailedPayment(
+        id="pay_uncached_nonexistent_999",
+        merchant_id="mer_01",
+        customer_id="cust_999",
+        amount_paise=150000,
+        currency="INR",
+        failure_reason="insufficient_funds",
+        attempt_count=1,
+        last_attempt_at=datetime(2026, 9, 1, 10, 0, 0),
+        payment_method="upi",
+        customer_ltv_paise=500000,
+        notes="Uncached record testing model absence",
+        payment_state="confirmed_failed",
+    )
+    # Under cache_only mode (representing model absence/no API key)
+    decision = strategy_agent_llm(record, cache_only=True)
+
+    # Must refuse autonomous debit retry and escalate to human
+    assert decision.chosen_action != "retry_now", "Fail-closed violated: autonomous retry emitted during model absence!"
+    assert decision.chosen_action == "escalate_to_human"
+    assert decision.escalate is True
+    assert decision.degraded_mode is True
+
+
+def test_per_method_retry_caps_apply_correct_cap_for_upi_vs_card():
+    """Guard 2 correctly halts retries at 3 for UPI, but allows attempt 3 for Card (cap=4)."""
+    record_upi_3 = FailedPayment(
+        id="pay_upi_cap_test",
+        merchant_id="mer_01",
+        customer_id="cust_01",
+        amount_paise=100000,
+        currency="INR",
+        failure_reason="insufficient_funds",
+        attempt_count=3,
+        last_attempt_at=datetime(2026, 9, 1, 10, 0, 0),
+        payment_method="upi",
+        customer_ltv_paise=500000,
+        notes="Testing UPI attempt 3",
+        payment_state="confirmed_failed",
+    )
+    record_card_3 = FailedPayment(
+        id="pay_card_cap_test",
+        merchant_id="mer_01",
+        customer_id="cust_02",
+        amount_paise=100000,
+        currency="INR",
+        failure_reason="insufficient_funds",
+        attempt_count=3,
+        last_attempt_at=datetime(2026, 9, 1, 10, 0, 0),
+        payment_method="card",
+        customer_ltv_paise=500000,
+        notes="Testing Card attempt 3",
+        payment_state="confirmed_failed",
+    )
+    record_card_4 = FailedPayment(
+        id="pay_card_cap_test_4",
+        merchant_id="mer_01",
+        customer_id="cust_02",
+        amount_paise=100000,
+        currency="INR",
+        failure_reason="insufficient_funds",
+        attempt_count=4,
+        last_attempt_at=datetime(2026, 9, 1, 10, 0, 0),
+        payment_method="card",
+        customer_ltv_paise=500000,
+        notes="Testing Card attempt 4",
+        payment_state="confirmed_failed",
+    )
+
+    dec_upi_3 = strategy_agent_rules(record_upi_3)
+    dec_card_3 = strategy_agent_rules(record_card_3)
+    dec_card_4 = strategy_agent_rules(record_card_4)
+
+    # UPI at 3 reaches cap -> stop_and_writeoff
+    assert dec_upi_3.chosen_action == "stop_and_writeoff"
+    assert dec_upi_3.guard_triggered == "retry_cap"
+
+    # Card at 3 is below card cap (4) -> retry_now
+    assert dec_card_3.chosen_action == "retry_now"
+    assert dec_card_3.guard_triggered is None
+
+    # Card at 4 reaches cap -> stop_and_writeoff
+    assert dec_card_4.chosen_action == "stop_and_writeoff"
+    assert dec_card_4.guard_triggered == "retry_cap"
+
+
+def test_pre_debit_notice_not_acked_routes_to_resend_pre_debit_notice():
+    """pre_debit_notice_not_acked routes strictly to resend_pre_debit_notice, never to retry_now."""
+    record = FailedPayment(
+        id="pay_pd_route_test",
+        merchant_id="mer_01",
+        customer_id="cust_01",
+        amount_paise=250000,
+        currency="INR",
+        failure_reason="pre_debit_notice_not_acked",
+        attempt_count=1,
+        last_attempt_at=datetime(2026, 9, 1, 10, 0, 0),
+        payment_method="upi",
+        customer_ltv_paise=800000,
+        notes="Notice sent 6h ago, needs 24h unacked window",
+        payment_state="confirmed_failed",
+    )
+    decision = strategy_agent_rules(record)
+
+    assert decision.chosen_action == "resend_pre_debit_notice"
+    assert decision.chosen_action != "retry_now"
+    assert decision.confidence == 0.85
+
+
+def test_afa_required_not_completed_has_own_branch():
+    """afa_required_not_completed has its own dedicated rule branch and does not fall through."""
+    record = FailedPayment(
+        id="pay_afa_route_test",
+        merchant_id="mer_01",
+        customer_id="cust_01",
+        amount_paise=1800000,
+        currency="INR",
+        failure_reason="afa_required_not_completed",
+        attempt_count=1,
+        last_attempt_at=datetime(2026, 9, 1, 10, 0, 0),
+        payment_method="card",
+        customer_ltv_paise=3600000,
+        notes="High value transaction challenge abandoned",
+        payment_state="confirmed_failed",
+    )
+    decision = strategy_agent_rules(record)
+
+    assert decision.chosen_action == "escalate_to_human"
+    assert decision.escalate is True
+    assert "AFA" in decision.reason
+    assert "15,000" in decision.reason
+    assert decision.confidence == 0.65

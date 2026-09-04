@@ -114,6 +114,120 @@ def get_retry_cap(payment_method: str) -> int:
     return RETRY_CAPS.get(payment_method.lower(), RETRY_CAPS.get("default", 3))
 
 
+def classify_and_decide(
+    payment: FailedPayment,
+    strategy: Optional[Callable[[FailedPayment], InterventionDecision]] = None,
+    use_llm: bool = False,
+) -> InterventionDecision:
+    """
+    Unified entry point for recovery decisions across both batch and webhook ingestion paths.
+    Enforces identical 4 deterministic guards and strategy decision routing.
+    """
+    print_policy_version_once()
+    if strategy is None:
+        from strategies import strategy_agent_llm, strategy_agent_rules
+        strategy = strategy_agent_llm if use_llm else strategy_agent_rules
+    return strategy(payment)
+
+
+def log_audit_entry(entry: AuditEntry, out_path: str = "audit_log.jsonl"):
+    """Appends an AuditEntry as newline-delimited JSON to out_path."""
+    p = Path(out_path)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    with open(p, "a", encoding="utf-8") as f:
+        f.write(entry.model_dump_json() + "\n")
+
+
+def replay_webhooks(
+    fixtures_dir: str = "fixtures/webhooks",
+    webhook_url: str = "http://127.0.0.1:8000/webhooks/razorpay",
+    secret: Optional[str] = None,
+):
+    """
+    Replays all JSON fixtures in fixtures_dir against webhook_url.
+    Each fixture is sent twice to demonstrate idempotency (duplicate suppression).
+    """
+    import httpx
+    import hmac
+    import hashlib
+
+    fixtures_path = Path(fixtures_dir)
+    if not fixtures_path.exists():
+        print(f"Error: Fixtures directory not found at {fixtures_path}")
+        return
+
+    secret = secret or os.getenv("RAZORPAY_WEBHOOK_SECRET", "test_webhook_secret_razorpay_2026")
+    files = sorted([f for f in fixtures_path.glob("*.json")])
+
+    if not files:
+        print(f"No .json fixtures found in {fixtures_path}")
+        return
+
+    print(f"\n==================================================================")
+    print(f"       RAZORPAY WEBHOOK REPLAY HARNESS (Fixtures: {len(files)})")
+    print(f"       Target URL: {webhook_url}")
+    print(f"==================================================================\n")
+
+    results = []
+
+    with httpx.Client(timeout=10.0) as client:
+        for fpath in files:
+            raw_text = fpath.read_text(encoding="utf-8")
+            payload_data = json.loads(raw_text)
+
+            # Check if fixture is deliberately bad signature
+            if "bad_signature" in fpath.name or payload_data.get("_bad_signature"):
+                sig = "invalid_hmac_sha256_bad_signature_00000000000000"
+            else:
+                sig = hmac.new(secret.encode("utf-8"), raw_text.encode("utf-8"), hashlib.sha256).hexdigest()
+
+            headers = {
+                "Content-Type": "application/json",
+                "X-Razorpay-Signature": sig,
+            }
+
+            event_id = payload_data.get("event_id") or payload_data.get("id") or fpath.stem
+
+            # Run 1: Initial delivery
+            try:
+                resp1 = client.post(webhook_url, content=raw_text.encode("utf-8"), headers=headers)
+                status1 = resp1.status_code
+                data1 = resp1.json() if resp1.headers.get("content-type", "").startswith("application/json") else {}
+                action1 = data1.get("decision", {}).get("chosen_action", "N/A") if status1 == 200 else f"HTTP {status1}"
+                sig_valid1 = (status1 != 401)
+                dup_suppressed1 = (data1.get("status") == "duplicate_suppressed")
+            except Exception as e:
+                status1 = "ERR"
+                action1 = str(e)[:25]
+                sig_valid1 = False
+                dup_suppressed1 = False
+
+            # Run 2: Duplicate delivery to test idempotency
+            try:
+                resp2 = client.post(webhook_url, content=raw_text.encode("utf-8"), headers=headers)
+                status2 = resp2.status_code
+                data2 = resp2.json() if resp2.headers.get("content-type", "").startswith("application/json") else {}
+                dup_suppressed2 = (data2.get("status") == "duplicate_suppressed")
+            except Exception as e:
+                status2 = "ERR"
+                dup_suppressed2 = False
+
+            results.append({
+                "file": fpath.name,
+                "event_id": event_id,
+                "sig_valid": "VALID" if sig_valid1 else "INVALID (401)",
+                "run1_action": action1,
+                "run2_dup": "YES (Suppressed)" if dup_suppressed2 else ("N/A (401)" if status1 == 401 else "NO"),
+            })
+
+    # Print aligned summary table
+    print(f"{'Fixture File':<42} | {'Event ID':<22} | {'Sig Valid':<14} | {'Run 1 Action':<25} | {'Run 2 Duplicate?'}")
+    print("-" * 128)
+    for r in results:
+        print(f"{r['file']:<42} | {r['event_id']:<22} | {r['sig_valid']:<14} | {r['run1_action']:<25} | {r['run2_dup']}")
+    print("-" * 128 + "\n")
+
+
 def process_batch(
     batch: List[dict],
     strategy: Optional[Callable[[FailedPayment], InterventionDecision]] = None,
@@ -233,8 +347,8 @@ def process_batch(
 
         payment = FailedPayment(**row) if isinstance(row, dict) else row
         
-        # 2. Delegate decision purely to the strategy function
-        decision = strategy(payment)
+        # 2. Delegate decision purely to the shared classify_and_decide function
+        decision = classify_and_decide(payment, strategy=strategy, use_llm=use_llm)
         action = decision.chosen_action
         action_counts[action] += 1
 
@@ -528,6 +642,17 @@ def main():
         default="benchmark_report.html",
         help="Path to generate standalone HTML benchmark report (default: benchmark_report.html)",
     )
+    parser.add_argument(
+        "--replay-webhooks",
+        action="store_true",
+        help="Replay sample webhook fixtures against the local FastAPI webhook receiver",
+    )
+    parser.add_argument(
+        "--webhook-url",
+        type=str,
+        default="http://127.0.0.1:8000/webhooks/razorpay",
+        help="Target URL for replaying webhooks (default: http://127.0.0.1:8000/webhooks/razorpay)",
+    )
 
     args = parser.parse_args()
 
@@ -542,8 +667,13 @@ def main():
         or args.demo_retry_exhaustion
         or args.demo_out_of_scope
         or args.demo_low_confidence
+        or args.replay_webhooks
     ):
         print_audit_summary(args.audit_out)
+        return
+
+    if args.replay_webhooks:
+        replay_webhooks(webhook_url=args.webhook_url)
         return
 
     if args.populate_llm_cache:

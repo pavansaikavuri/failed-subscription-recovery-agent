@@ -1,0 +1,28 @@
+{
+  "entity": "event",
+  "account_id": "acc_merch_live_01",
+  "event": "payment.failed",
+  "contains": ["payment"],
+  "event_id": "evt_fail_retry_exhausted_06",
+  "created_at": 1725440060,
+  "payload": {
+    "payment": {
+      "entity": {
+        "id": "pay_test_cap_06",
+        "amount": 150000,
+        "currency": "INR",
+        "status": "failed",
+        "method": "upi",
+        "error_code": "BAD_REQUEST_ERROR",
+        "error_description": "Payment failed again after repeated attempts",
+        "error_reason": "insufficient_funds",
+        "attempt_count": 4,
+        "customer_id": "cust_chennai_606",
+        "notes": {
+          "customer_ltv": 1800000,
+          "max_attempts_exceeded": true
+        }
+      }
+    }
+  }
+}

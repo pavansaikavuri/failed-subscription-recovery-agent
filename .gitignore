@@ -7,6 +7,7 @@
 .venv/
 __pycache__/
 *.pyc
+*.db
 logs/
 .DS_Store
 verify_test/

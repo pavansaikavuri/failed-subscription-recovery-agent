@@ -1,0 +1,28 @@
+{
+  "entity": "event",
+  "account_id": "acc_merch_live_01",
+  "event": "payment.failed",
+  "contains": ["payment"],
+  "event_id": "evt_fail_issuer_declined_05",
+  "created_at": 1725440050,
+  "payload": {
+    "payment": {
+      "entity": {
+        "id": "pay_test_declined_05",
+        "amount": 450000,
+        "currency": "INR",
+        "status": "failed",
+        "method": "card",
+        "error_code": "BAD_REQUEST_ERROR",
+        "error_description": "Issuing bank permanently declined debit permission",
+        "error_reason": "issuer_declined",
+        "attempt_count": 1,
+        "customer_id": "cust_hyderabad_505",
+        "notes": {
+          "customer_ltv": 5400000,
+          "issuer_bank": "HDFC"
+        }
+      }
+    }
+  }
+}

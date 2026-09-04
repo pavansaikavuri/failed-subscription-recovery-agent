@@ -1,0 +1,25 @@
+{
+  "entity": "event",
+  "account_id": "acc_merch_live_01",
+  "event": "payment.failed",
+  "contains": ["payment"],
+  "event_id": "evt_fail_dispute_08",
+  "created_at": 1725440080,
+  "payload": {
+    "payment": {
+      "entity": {
+        "id": "pay_test_disp_08",
+        "amount": 350000,
+        "currency": "INR",
+        "status": "failed",
+        "method": "card",
+        "error_code": "BAD_REQUEST_ERROR",
+        "error_description": "Auto debit rejected",
+        "error_reason": "insufficient_funds",
+        "attempt_count": 1,
+        "customer_id": "cust_noida_808",
+        "notes": "Customer raised formal fraud dispute regarding recurring authorization"
+      }
+    }
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "entity": "event",
+  "account_id": "acc_merch_live_01",
+  "event": "payment.failed",
+  "contains": ["payment"],
+  "event_id": "evt_fail_reconcile_07",
+  "created_at": 1725440070,
+  "payload": {
+    "payment": {
+      "entity": {
+        "id": "pay_test_recon_07",
+        "amount": 599900,
+        "currency": "INR",
+        "status": "failed",
+        "method": "upi",
+        "error_code": "GATEWAY_ERROR",
+        "error_description": "Timeout received from NPCI switch during debit confirmation",
+        "error_reason": "gateway_timeout",
+        "attempt_count": 1,
+        "customer_id": "cust_kolkata_707",
+        "payment_state": "possibly_debited",
+        "notes": {
+          "customer_ltv": 7198800,
+          "npci_ref": "NPCI_PENDING_REC"
+        }
+      }
+    }
+  }
+}

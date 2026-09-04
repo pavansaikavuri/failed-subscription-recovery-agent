@@ -1,0 +1,36 @@
+{
+  "entity": "event",
+  "account_id": "acc_merch_live_01",
+  "event": "subscription.halted",
+  "contains": ["subscription", "payment"],
+  "event_id": "evt_sub_halted_lapsed_09",
+  "created_at": 1725440090,
+  "payload": {
+    "subscription": {
+      "entity": {
+        "id": "sub_enterprise_909",
+        "status": "halted",
+        "current_start": 1725440000,
+        "current_end": 1728032000
+      }
+    },
+    "payment": {
+      "entity": {
+        "id": "pay_test_lapsed_09",
+        "amount": 1200000,
+        "currency": "INR",
+        "status": "failed",
+        "method": "card",
+        "error_code": "BAD_REQUEST_ERROR",
+        "error_description": "Recurring mandate lapsed on card reissuance by bank",
+        "error_reason": "mandate_lapsed_on_reissue",
+        "attempt_count": 1,
+        "customer_id": "cust_gurgaon_909",
+        "notes": {
+          "customer_ltv": 14400000,
+          "tier": "enterprise"
+        }
+      }
+    }
+  }
+}

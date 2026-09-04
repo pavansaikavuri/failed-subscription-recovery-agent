@@ -1,0 +1,28 @@
+{
+  "entity": "event",
+  "account_id": "acc_merch_live_01",
+  "event": "payment.failed",
+  "contains": ["payment"],
+  "event_id": "evt_fail_pre_debit_04",
+  "created_at": 1725440040,
+  "payload": {
+    "payment": {
+      "entity": {
+        "id": "pay_test_pd_04",
+        "amount": 99900,
+        "currency": "INR",
+        "status": "failed",
+        "method": "upi",
+        "error_code": "BAD_REQUEST_ERROR",
+        "error_description": "Mandatory 24-hour pre-debit notification was not acknowledged",
+        "error_reason": "pre_debit_notice_not_acked",
+        "attempt_count": 1,
+        "customer_id": "cust_pune_404",
+        "notes": {
+          "customer_ltv": 1198800,
+          "rbi_mandate": "enforced"
+        }
+      }
+    }
+  }
+}

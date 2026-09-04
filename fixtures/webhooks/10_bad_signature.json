@@ -1,0 +1,28 @@
+{
+  "_bad_signature": true,
+  "entity": "event",
+  "account_id": "acc_merch_live_01",
+  "event": "payment.failed",
+  "contains": ["payment"],
+  "event_id": "evt_fail_tampered_sig_10",
+  "created_at": 1725440100,
+  "payload": {
+    "payment": {
+      "entity": {
+        "id": "pay_test_bad_sig_10",
+        "amount": 750000,
+        "currency": "INR",
+        "status": "failed",
+        "method": "upi",
+        "error_code": "BAD_REQUEST_ERROR",
+        "error_description": "Tampered request payload with invalid signature",
+        "error_reason": "insufficient_funds",
+        "attempt_count": 1,
+        "customer_id": "cust_attacker_000",
+        "notes": {
+          "tampered": true
+        }
+      }
+    }
+  }
+}

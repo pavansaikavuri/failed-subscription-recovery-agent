@@ -1,0 +1,28 @@
+{
+  "entity": "event",
+  "account_id": "acc_merch_live_01",
+  "event": "payment.failed",
+  "contains": ["payment"],
+  "event_id": "evt_fail_upi_pin_02",
+  "created_at": 1725440020,
+  "payload": {
+    "payment": {
+      "entity": {
+        "id": "pay_test_upi_02",
+        "amount": 49900,
+        "currency": "INR",
+        "status": "failed",
+        "method": "upi",
+        "error_code": "BAD_REQUEST_ERROR",
+        "error_description": "UPI MPIN validation failed or timed out",
+        "error_reason": "upi_pin_failure",
+        "attempt_count": 1,
+        "customer_id": "cust_bangalore_202",
+        "notes": {
+          "customer_ltv": 299400,
+          "app_source": "android"
+        }
+      }
+    }
+  }
+}

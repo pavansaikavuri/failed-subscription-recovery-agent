@@ -1,0 +1,28 @@
+{
+  "entity": "event",
+  "account_id": "acc_merch_live_01",
+  "event": "payment.failed",
+  "contains": ["payment"],
+  "event_id": "evt_fail_card_expired_03",
+  "created_at": 1725440030,
+  "payload": {
+    "payment": {
+      "entity": {
+        "id": "pay_test_card_exp_03",
+        "amount": 299900,
+        "currency": "INR",
+        "status": "failed",
+        "method": "card",
+        "error_code": "BAD_REQUEST_ERROR",
+        "error_description": "Card expiry month/year is in the past",
+        "error_reason": "card_expired",
+        "attempt_count": 1,
+        "customer_id": "cust_mumbai_303",
+        "notes": {
+          "customer_ltv": 3598800,
+          "card_network": "Visa"
+        }
+      }
+    }
+  }
+}
