@@ -1,0 +1,885 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Razorpay Subscription Recovery Benchmark Report</title>
+    <style>
+        :root {
+            --bg-body: #f8fafc;
+            --bg-card: #ffffff;
+            --border-card: #e2e8f0;
+            --text-primary: #0f172a;
+            --text-secondary: #475569;
+            --text-muted: #64748b;
+            --primary: #2563eb;
+            --success: #059669;
+            --danger: #dc2626;
+            --warning: #d97706;
+            --purple: #7c3aed;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background-color: var(--bg-body);
+            color: var(--text-primary);
+            line-height: 1.5;
+            padding: 32px 24px;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        /* Header */
+        .report-header {
+            background: var(--bg-card);
+            border: 1px solid var(--border-card);
+            border-radius: 12px;
+            padding: 28px 32px;
+            margin-bottom: 24px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+        }
+
+        .report-title-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            flex-wrap: wrap;
+            gap: 16px;
+            margin-bottom: 20px;
+        }
+
+        .report-title {
+            font-size: 26px;
+            font-weight: 800;
+            color: var(--text-primary);
+            letter-spacing: -0.02em;
+        }
+
+        .report-subtitle {
+            font-size: 14px;
+            color: var(--text-secondary);
+            margin-top: 4px;
+        }
+
+        .meta-chips {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+
+        .chip {
+            display: inline-flex;
+            align-items: center;
+            padding: 6px 12px;
+            border-radius: 6px;
+            background: #f1f5f9;
+            font-size: 12.5px;
+            color: var(--text-secondary);
+            font-weight: 500;
+            border: 1px solid #e2e8f0;
+        }
+
+        .chip strong {
+            color: var(--text-primary);
+            margin-left: 4px;
+        }
+
+        .composition-box {
+            background: #eff6ff;
+            border: 1px solid #bfdbfe;
+            color: #1e40af;
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+            font-size: 12.5px;
+            padding: 10px 14px;
+            border-radius: 6px;
+            margin-top: 16px;
+            font-weight: 600;
+        }
+
+        /* Prominent Disclaimer Banner */
+        .simulation-banner {
+            background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%);
+            border: 1.5px solid #f59e0b;
+            border-left: 6px solid #d97706;
+            border-radius: 10px;
+            padding: 16px 20px;
+            margin-bottom: 28px;
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            box-shadow: 0 2px 4px rgba(217, 119, 6, 0.08);
+        }
+
+        .banner-icon {
+            font-size: 22px;
+            flex-shrink: 0;
+        }
+
+        .banner-text {
+            font-size: 14.5px;
+            font-weight: 700;
+            color: #92400e;
+            letter-spacing: -0.01em;
+        }
+
+        /* Cards */
+        .card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-card);
+            border-radius: 12px;
+            padding: 28px;
+            margin-bottom: 28px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
+        }
+
+        .card-header {
+            margin-bottom: 20px;
+        }
+
+        .card-title {
+            font-size: 20px;
+            font-weight: 700;
+            color: var(--text-primary);
+            letter-spacing: -0.01em;
+        }
+
+        .card-desc {
+            font-size: 13.5px;
+            color: var(--text-secondary);
+            margin-top: 4px;
+        }
+
+        /* Chart container */
+        .chart-box {
+            width: 100%;
+            overflow-x: auto;
+            background: #ffffff;
+            border: 1px solid #f1f5f9;
+            border-radius: 8px;
+            padding: 12px;
+        }
+
+        /* Tables */
+        .table-responsive {
+            width: 100%;
+            overflow-x: auto;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13.5px;
+            text-align: left;
+        }
+
+        th {
+            background: #f8fafc;
+            color: var(--text-secondary);
+            font-weight: 600;
+            padding: 12px 14px;
+            border-bottom: 1.5px solid var(--border-card);
+            text-transform: uppercase;
+            font-size: 11px;
+            letter-spacing: 0.04em;
+        }
+
+        td {
+            padding: 12px 14px;
+            border-bottom: 1px solid #f1f5f9;
+            color: var(--text-primary);
+        }
+
+        tr:hover td {
+            background-color: #f8fafc;
+        }
+
+        tr.highlight-row td {
+            background-color: #fffbeb !important;
+            border-top: 1.5px solid #fde68a;
+            border-bottom: 1.5px solid #fde68a;
+        }
+
+        .text-left { text-align: left; }
+        .text-right { text-align: right; }
+        .text-center { text-align: center; }
+        .font-bold { font-weight: 700; }
+        .font-medium { font-weight: 500; }
+
+        .text-danger { color: var(--danger); }
+        .text-success { color: var(--success); }
+        .text-slate-900 { color: #0f172a; }
+        .text-slate-700 { color: #334155; }
+        .text-slate-600 { color: #475569; }
+        .text-slate-500 { color: #64748b; }
+
+        .strategy-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .strategy-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            display: inline-block;
+        }
+
+        /* Badges */
+        .badge-success {
+            background: #dcfce7;
+            color: #15803d;
+            font-size: 11.5px;
+            font-weight: 700;
+            padding: 4px 8px;
+            border-radius: 4px;
+            display: inline-block;
+        }
+
+        .badge-danger {
+            background: #fee2e2;
+            color: #b91c1c;
+            font-size: 11.5px;
+            font-weight: 700;
+            padding: 4px 8px;
+            border-radius: 4px;
+            display: inline-block;
+        }
+
+        .badge-neutral {
+            background: #f1f5f9;
+            color: #475569;
+            font-size: 11.5px;
+            font-weight: 600;
+            padding: 4px 8px;
+            border-radius: 4px;
+            display: inline-block;
+        }
+
+        .badge-deployable {
+            font-size: 11.5px;
+            font-weight: 700;
+            padding: 4px 10px;
+            border-radius: 6px;
+            display: inline-block;
+            text-transform: capitalize;
+        }
+
+        .footnote {
+            font-size: 12px;
+            color: var(--text-muted);
+            margin-top: 12px;
+            font-style: italic;
+        }
+
+        /* Compliance Grid */
+        .compliance-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+
+        .compliance-kpi {
+            background: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            padding: 16px;
+        }
+
+        .kpi-title {
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            color: var(--text-secondary);
+            font-weight: 600;
+        }
+
+        .kpi-value {
+            font-size: 24px;
+            font-weight: 800;
+            color: var(--text-primary);
+            margin-top: 4px;
+        }
+
+        .kpi-desc {
+            font-size: 12px;
+            color: var(--text-muted);
+            margin-top: 4px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- 2.a Header -->
+        <header class="report-header">
+            <div class="report-title-row">
+                <div>
+                    <h1 class="report-title">Subscription Recovery Benchmark Report</h1>
+                    <p class="report-subtitle">Razorpay Buildathon Track 3: Failed Subscription Recovery Agent</p>
+                </div>
+                <div class="meta-chips">
+                    <span class="chip">Batch Size: <strong>40 records</strong></span>
+                    <span class="chip">Seeds: <strong>200 draws</strong></span>
+                    <span class="chip">Revenue at Risk: <strong>₹98,952.00</strong></span>
+                    <span class="chip">Base Penalty: <strong>₹500 / violation</strong></span>
+                    <span class="chip">Policy Version: <strong>97593c6fc2ea</strong></span>
+                    <span class="chip">Generated: <strong>2026-09-04 16:06:51</strong></span>
+                </div>
+            </div>
+            <div class="composition-box">
+                agent_llm composition: 31 live LLM / 0 rule fallback (cache miss) / 7 deterministic guard
+            </div>
+        </header>
+
+        <!-- 2.b Prominent Disclaimer Banner -->
+        <div class="simulation-banner">
+            <div class="banner-icon">⚖️</div>
+            <div class="banner-text">
+                All recovery outcomes are simulated under an explicit probability model. No live merchant money was recovered.
+            </div>
+        </div>
+
+        <!-- 2.c THE PENALTY SENSITIVITY CURVE - Centrepiece -->
+        <section class="card">
+            <div class="card-header">
+                <h2 class="card-title">The Penalty Sensitivity Curve (Centrepiece)</h2>
+                <p class="card-desc">
+                    Mean net recovery as regulatory non-compliance penalty increases from ₹0 to ₹5,000 per violation.
+                    Notice the exact break-even crossing point at <strong>₹912.84</strong> where
+                    <strong>agent_rules</strong> overtakes <strong>naive_rules</strong>, and the steep plunge of unguarded <strong>always_retry</strong> into severe losses.
+                </p>
+            </div>
+            <div class="chart-box">
+                <svg viewBox="0 0 1040 540" width="100%" height="auto" class="chart-svg" xmlns="http://www.w3.org/2000/svg" style="overflow: visible; font-family: -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, sans-serif;">
+<rect x="95" y="45" width="780" height="430" fill="#ffffff" stroke="#e2e8f0" stroke-width="1" rx="4" />
+<line x1="95" y1="475.0" x2="875" y2="475.0" stroke="#f1f5f9" stroke-width="1"  />
+<text x="85" y="479.0" text-anchor="end" font-size="11" font-weight="normal" fill="#64748b">₹-70,000</text>
+<line x1="95" y1="393.1" x2="875" y2="393.1" stroke="#f1f5f9" stroke-width="1"  />
+<text x="85" y="397.1" text-anchor="end" font-size="11" font-weight="normal" fill="#64748b">₹-50,000</text>
+<line x1="95" y1="311.2" x2="875" y2="311.2" stroke="#f1f5f9" stroke-width="1"  />
+<text x="85" y="315.2" text-anchor="end" font-size="11" font-weight="normal" fill="#64748b">₹-30,000</text>
+<line x1="95" y1="229.3" x2="875" y2="229.3" stroke="#f1f5f9" stroke-width="1"  />
+<text x="85" y="233.3" text-anchor="end" font-size="11" font-weight="normal" fill="#64748b">₹-10,000</text>
+<line x1="95" y1="147.4" x2="875" y2="147.4" stroke="#f1f5f9" stroke-width="1"  />
+<text x="85" y="151.4" text-anchor="end" font-size="11" font-weight="normal" fill="#64748b">₹+10,000</text>
+<line x1="95" y1="65.5" x2="875" y2="65.5" stroke="#f1f5f9" stroke-width="1"  />
+<text x="85" y="69.5" text-anchor="end" font-size="11" font-weight="normal" fill="#64748b">₹+30,000</text>
+<line x1="95.0" y1="45" x2="95.0" y2="475" stroke="#f1f5f9" stroke-width="1" />
+<text x="95.0" y="495" text-anchor="middle" font-size="11" fill="#64748b">₹0</text>
+<line x1="251.0" y1="45" x2="251.0" y2="475" stroke="#f1f5f9" stroke-width="1" />
+<text x="251.0" y="495" text-anchor="middle" font-size="11" fill="#64748b">₹1,000</text>
+<line x1="407.0" y1="45" x2="407.0" y2="475" stroke="#f1f5f9" stroke-width="1" />
+<text x="407.0" y="495" text-anchor="middle" font-size="11" fill="#64748b">₹2,000</text>
+<line x1="563.0" y1="45" x2="563.0" y2="475" stroke="#f1f5f9" stroke-width="1" />
+<text x="563.0" y="495" text-anchor="middle" font-size="11" fill="#64748b">₹3,000</text>
+<line x1="719.0" y1="45" x2="719.0" y2="475" stroke="#f1f5f9" stroke-width="1" />
+<text x="719.0" y="495" text-anchor="middle" font-size="11" fill="#64748b">₹4,000</text>
+<line x1="875.0" y1="45" x2="875.0" y2="475" stroke="#f1f5f9" stroke-width="1" />
+<text x="875.0" y="495" text-anchor="middle" font-size="11" fill="#64748b">₹5,000</text>
+<text x="485.0" y="523" text-anchor="middle" font-size="12" font-weight="600" fill="#334155">Regulatory Non-Compliance Penalty per Violation (₹)</text>
+<text transform="rotate(-90)" x="-260.0" y="30" text-anchor="middle" font-size="12" font-weight="600" fill="#334155">Mean Net Recovery (₹)</text>
+<line x1="237.4" y1="45" x2="237.4" y2="475" stroke="#d97706" stroke-width="2.5" stroke-dasharray="6,4" />
+<polyline points="95.0,188.3 134.0,188.3 173.0,188.3 237.4,188.3 329.0,188.3 563.0,188.3 875.0,188.3" fill="none" stroke="#94a3b8" stroke-width="1.5" stroke-dasharray="3,3" stroke-linecap="round" stroke-linejoin="round" />
+<circle cx="95.0" cy="188.3" r="4" fill="#94a3b8" stroke="#ffffff" stroke-width="1.5" />
+<circle cx="134.0" cy="188.3" r="4" fill="#94a3b8" stroke="#ffffff" stroke-width="1.5" />
+<circle cx="173.0" cy="188.3" r="4" fill="#94a3b8" stroke="#ffffff" stroke-width="1.5" />
+<circle cx="237.4" cy="188.3" r="4" fill="#94a3b8" stroke="#ffffff" stroke-width="1.5" />
+<circle cx="329.0" cy="188.3" r="4" fill="#94a3b8" stroke="#ffffff" stroke-width="1.5" />
+<circle cx="563.0" cy="188.3" r="4" fill="#94a3b8" stroke="#ffffff" stroke-width="1.5" />
+<circle cx="875.0" cy="188.3" r="4" fill="#94a3b8" stroke="#ffffff" stroke-width="1.5" />
+<polyline points="95.0,135.0 134.0,151.4 173.0,167.8 237.4,194.9 329.0,233.3 563.0,331.6 875.0,462.6" fill="none" stroke="#dc2626" stroke-width="3.0"  stroke-linecap="round" stroke-linejoin="round" />
+<circle cx="95.0" cy="135.0" r="4" fill="#dc2626" stroke="#ffffff" stroke-width="1.5" />
+<circle cx="134.0" cy="151.4" r="4" fill="#dc2626" stroke="#ffffff" stroke-width="1.5" />
+<circle cx="173.0" cy="167.8" r="4" fill="#dc2626" stroke="#ffffff" stroke-width="1.5" />
+<circle cx="237.4" cy="194.9" r="4" fill="#dc2626" stroke="#ffffff" stroke-width="1.5" />
+<circle cx="329.0" cy="233.3" r="4" fill="#dc2626" stroke="#ffffff" stroke-width="1.5" />
+<circle cx="563.0" cy="331.6" r="4" fill="#dc2626" stroke="#ffffff" stroke-width="1.5" />
+<circle cx="875.0" cy="462.6" r="4" fill="#dc2626" stroke="#ffffff" stroke-width="1.5" />
+<polyline points="95.0,118.7 134.0,118.7 173.0,118.7 237.4,118.7 329.0,118.7 563.0,118.7 875.0,118.7" fill="none" stroke="#4f46e5" stroke-width="2.5" stroke-dasharray="4,2" stroke-linecap="round" stroke-linejoin="round" />
+<circle cx="95.0" cy="118.7" r="4" fill="#4f46e5" stroke="#ffffff" stroke-width="1.5" />
+<circle cx="134.0" cy="118.7" r="4" fill="#4f46e5" stroke="#ffffff" stroke-width="1.5" />
+<circle cx="173.0" cy="118.7" r="4" fill="#4f46e5" stroke="#ffffff" stroke-width="1.5" />
+<circle cx="237.4" cy="118.7" r="4" fill="#4f46e5" stroke="#ffffff" stroke-width="1.5" />
+<circle cx="329.0" cy="118.7" r="4" fill="#4f46e5" stroke="#ffffff" stroke-width="1.5" />
+<circle cx="563.0" cy="118.7" r="4" fill="#4f46e5" stroke="#ffffff" stroke-width="1.5" />
+<circle cx="875.0" cy="118.7" r="4" fill="#4f46e5" stroke="#ffffff" stroke-width="1.5" />
+<polyline points="95.0,77.1 134.0,83.3 173.0,89.4 237.4,99.6 329.0,114.0 563.0,150.8 875.0,200.0" fill="none" stroke="#d97706" stroke-width="2.5"  stroke-linecap="round" stroke-linejoin="round" />
+<circle cx="95.0" cy="77.1" r="4" fill="#d97706" stroke="#ffffff" stroke-width="1.5" />
+<circle cx="134.0" cy="83.3" r="4" fill="#d97706" stroke="#ffffff" stroke-width="1.5" />
+<circle cx="173.0" cy="89.4" r="4" fill="#d97706" stroke="#ffffff" stroke-width="1.5" />
+<circle cx="237.4" cy="99.6" r="4" fill="#d97706" stroke="#ffffff" stroke-width="1.5" />
+<circle cx="329.0" cy="114.0" r="4" fill="#d97706" stroke="#ffffff" stroke-width="1.5" />
+<circle cx="563.0" cy="150.8" r="4" fill="#d97706" stroke="#ffffff" stroke-width="1.5" />
+<circle cx="875.0" cy="200.0" r="4" fill="#d97706" stroke="#ffffff" stroke-width="1.5" />
+<polyline points="95.0,101.3 134.0,101.3 173.0,101.3 237.4,101.3 329.0,101.3 563.0,101.3 875.0,101.3" fill="none" stroke="#0284c7" stroke-width="2.5"  stroke-linecap="round" stroke-linejoin="round" />
+<circle cx="95.0" cy="101.3" r="4" fill="#0284c7" stroke="#ffffff" stroke-width="1.5" />
+<circle cx="134.0" cy="101.3" r="4" fill="#0284c7" stroke="#ffffff" stroke-width="1.5" />
+<circle cx="173.0" cy="101.3" r="4" fill="#0284c7" stroke="#ffffff" stroke-width="1.5" />
+<circle cx="237.4" cy="101.3" r="4" fill="#0284c7" stroke="#ffffff" stroke-width="1.5" />
+<circle cx="329.0" cy="101.3" r="4" fill="#0284c7" stroke="#ffffff" stroke-width="1.5" />
+<circle cx="563.0" cy="101.3" r="4" fill="#0284c7" stroke="#ffffff" stroke-width="1.5" />
+<circle cx="875.0" cy="101.3" r="4" fill="#0284c7" stroke="#ffffff" stroke-width="1.5" />
+<polyline points="95.0,99.6 134.0,99.6 173.0,99.6 237.4,99.6 329.0,99.6 563.0,99.6 875.0,99.6" fill="none" stroke="#059669" stroke-width="3.5"  stroke-linecap="round" stroke-linejoin="round" />
+<circle cx="95.0" cy="99.6" r="4" fill="#059669" stroke="#ffffff" stroke-width="1.5" />
+<circle cx="134.0" cy="99.6" r="4" fill="#059669" stroke="#ffffff" stroke-width="1.5" />
+<circle cx="173.0" cy="99.6" r="4" fill="#059669" stroke="#ffffff" stroke-width="1.5" />
+<circle cx="237.4" cy="99.6" r="4" fill="#059669" stroke="#ffffff" stroke-width="1.5" />
+<circle cx="329.0" cy="99.6" r="4" fill="#059669" stroke="#ffffff" stroke-width="1.5" />
+<circle cx="563.0" cy="99.6" r="4" fill="#059669" stroke="#ffffff" stroke-width="1.5" />
+<circle cx="875.0" cy="99.6" r="4" fill="#059669" stroke="#ffffff" stroke-width="1.5" />
+<polyline points="95.0,73.0 134.0,74.7 173.0,75.7 237.4,77.4 329.0,81.4 563.0,81.4 875.0,81.4" fill="none" stroke="#7c3aed" stroke-width="2.5" stroke-dasharray="6,3" stroke-linecap="round" stroke-linejoin="round" />
+<circle cx="95.0" cy="73.0" r="4" fill="#7c3aed" stroke="#ffffff" stroke-width="1.5" />
+<circle cx="134.0" cy="74.7" r="4" fill="#7c3aed" stroke="#ffffff" stroke-width="1.5" />
+<circle cx="173.0" cy="75.7" r="4" fill="#7c3aed" stroke="#ffffff" stroke-width="1.5" />
+<circle cx="237.4" cy="77.4" r="4" fill="#7c3aed" stroke="#ffffff" stroke-width="1.5" />
+<circle cx="329.0" cy="81.4" r="4" fill="#7c3aed" stroke="#ffffff" stroke-width="1.5" />
+<circle cx="563.0" cy="81.4" r="4" fill="#7c3aed" stroke="#ffffff" stroke-width="1.5" />
+<circle cx="875.0" cy="81.4" r="4" fill="#7c3aed" stroke="#ffffff" stroke-width="1.5" />
+<text x="883.0" y="85.4" font-size="11" font-weight="600" fill="#7c3aed">oracle (₹+26,111)</text>
+<text x="883.0" y="103.6" font-size="11" font-weight="600" fill="#059669">agent_rules (₹+21,677)</text>
+<text x="883.0" y="121.6" font-size="11" font-weight="600" fill="#0284c7">agent_llm (₹+21,259)</text>
+<text x="883.0" y="139.6" font-size="11" font-weight="600" fill="#4f46e5">message_only (₹+16,994)</text>
+<text x="883.0" y="192.3" font-size="11" font-weight="600" fill="#94a3b8">no_action (₹0)</text>
+<text x="883.0" y="210.3" font-size="11" font-weight="600" fill="#d97706">naive_rules (₹-2,846)</text>
+<text x="883.0" y="466.6" font-size="11" font-weight="600" fill="#dc2626">always_retry (₹-66,983)</text>
+<circle cx="237.4" cy="99.6" r="8" fill="#d97706" stroke="#ffffff" stroke-width="2.5" />
+<circle cx="237.4" cy="99.6" r="13" fill="none" stroke="#d97706" stroke-width="1.5" opacity="0.4" />
+<g><rect x="132.4" y="6.0" width="210" height="34" rx="5" fill="#fffbeb" stroke="#d97706" stroke-width="1.5" filter="drop-shadow(0 2px 4px rgba(0,0,0,0.06))" /><text x="237.4" y="20.0" text-anchor="middle" font-size="11" font-weight="bold" fill="#92400e">Crossing Point: ₹912.84</text><text x="237.4" y="33.0" text-anchor="middle" font-size="9.5" font-weight="600" fill="#b45309">agent_rules overtakes naive_rules</text></g>
+<g transform="translate(665.0, 434.64657095238096)"><rect x="0" y="0" width="200" height="24" rx="4" fill="#fee2e2" stroke="#dc2626" stroke-width="1" /><text x="100" y="16" text-anchor="middle" font-size="10" font-weight="bold" fill="#991b1b">always_retry plunges below zero</text></g>
+</svg>
+            </div>
+        </section>
+
+        <!-- 2.d Horizontal Bar Chart at Rs 500 Penalty -->
+        <section class="card">
+            <div class="card-header">
+                <h2 class="card-title">Mean Net Recovery by Strategy (₹500 Base Penalty)</h2>
+                <p class="card-desc">
+                    Evaluated across 200 seeded draws with paired standard errors (±SE) relative to agent_rules.
+                </p>
+            </div>
+            <div class="chart-box">
+                <svg viewBox="0 0 1040 384" width="100%" height="auto" class="chart-svg" xmlns="http://www.w3.org/2000/svg" style="overflow: visible; font-family: -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, sans-serif;">
+<rect x="140" y="40" width="690" height="304" fill="#ffffff" stroke="#e2e8f0" stroke-width="1" rx="4" />
+<line x1="140.0" y1="40" x2="140.0" y2="344" stroke="#f1f5f9" stroke-width="1" />
+<text x="140.0" y="364" text-anchor="middle" font-size="11" fill="#64748b">₹0</text>
+<line x1="238.6" y1="40" x2="238.6" y2="344" stroke="#f1f5f9" stroke-width="1" />
+<text x="238.6" y="364" text-anchor="middle" font-size="11" fill="#64748b">₹5,000</text>
+<line x1="337.1" y1="40" x2="337.1" y2="344" stroke="#f1f5f9" stroke-width="1" />
+<text x="337.1" y="364" text-anchor="middle" font-size="11" fill="#64748b">₹10,000</text>
+<line x1="435.7" y1="40" x2="435.7" y2="344" stroke="#f1f5f9" stroke-width="1" />
+<text x="435.7" y="364" text-anchor="middle" font-size="11" fill="#64748b">₹15,000</text>
+<line x1="534.3" y1="40" x2="534.3" y2="344" stroke="#f1f5f9" stroke-width="1" />
+<text x="534.3" y="364" text-anchor="middle" font-size="11" fill="#64748b">₹20,000</text>
+<line x1="632.9" y1="40" x2="632.9" y2="344" stroke="#f1f5f9" stroke-width="1" />
+<text x="632.9" y="364" text-anchor="middle" font-size="11" fill="#64748b">₹25,000</text>
+<line x1="731.4" y1="40" x2="731.4" y2="344" stroke="#f1f5f9" stroke-width="1" />
+<text x="731.4" y="364" text-anchor="middle" font-size="11" fill="#64748b">₹30,000</text>
+<line x1="830.0" y1="40" x2="830.0" y2="344" stroke="#f1f5f9" stroke-width="1" />
+<text x="830.0" y="364" text-anchor="middle" font-size="11" fill="#64748b">₹35,000</text>
+<text x="485.0" y="380" text-anchor="middle" font-size="11.5" font-weight="600" fill="#334155">Mean Net Recovery (₹) at ₹500 Violation Penalty Level</text>
+<rect x="140" y="40" width="542.3" height="28" fill="#7c3aed" rx="4" />
+<text x="128" y="59" text-anchor="end" font-size="12" font-weight="600" fill="#0f172a">oracle</text>
+<line x1="670.3" y1="54.0" x2="694.4" y2="54.0" stroke="#0f172a" stroke-width="2" />
+<line x1="670.3" y1="48.0" x2="670.3" y2="60.0" stroke="#0f172a" stroke-width="2" />
+<line x1="694.4" y1="48.0" x2="694.4" y2="60.0" stroke="#0f172a" stroke-width="2" />
+<text x="704.4" y="59" font-size="12" font-weight="700" fill="#0f172a">₹27,509.45 <tspan font-size="11" font-weight="normal" fill="#64748b">(±₹611.09)</tspan></text>
+<rect x="140" y="86" width="476.2" height="28" fill="#d97706" rx="4" />
+<text x="128" y="105" text-anchor="end" font-size="12" font-weight="600" fill="#0f172a">naive_rules</text>
+<line x1="604.5" y1="100.0" x2="627.9" y2="100.0" stroke="#0f172a" stroke-width="2" />
+<line x1="604.5" y1="94.0" x2="604.5" y2="106.0" stroke="#0f172a" stroke-width="2" />
+<line x1="627.9" y1="94.0" x2="627.9" y2="106.0" stroke="#0f172a" stroke-width="2" />
+<text x="637.9" y="105" font-size="12" font-weight="700" fill="#0f172a">₹24,154.31 <tspan font-size="11" font-weight="normal" fill="#64748b">(±₹593.10)</tspan></text>
+<rect x="140" y="132" width="427.4" height="28" fill="#059669" rx="4" />
+<text x="128" y="151" text-anchor="end" font-size="12" font-weight="600" fill="#0f172a">agent_rules</text>
+<text x="577.4" y="151" font-size="12" font-weight="700" fill="#0f172a">₹21,677.28 <tspan font-size="11" font-weight="normal" fill="#64748b">(Baseline)</tspan></text>
+<rect x="140" y="178" width="419.1" height="28" fill="#0284c7" rx="4" />
+<text x="128" y="197" text-anchor="end" font-size="12" font-weight="600" fill="#0f172a">agent_llm</text>
+<line x1="547.5" y1="192.0" x2="570.7" y2="192.0" stroke="#0f172a" stroke-width="2" />
+<line x1="547.5" y1="186.0" x2="547.5" y2="198.0" stroke="#0f172a" stroke-width="2" />
+<line x1="570.7" y1="186.0" x2="570.7" y2="198.0" stroke="#0f172a" stroke-width="2" />
+<text x="580.7" y="197" font-size="12" font-weight="700" fill="#0f172a">₹21,259.24 <tspan font-size="11" font-weight="normal" fill="#64748b">(±₹587.10)</tspan></text>
+<rect x="140" y="224" width="335.0" height="28" fill="#4f46e5" rx="4" />
+<text x="128" y="243" text-anchor="end" font-size="12" font-weight="600" fill="#0f172a">message_only</text>
+<line x1="462.3" y1="238.0" x2="487.7" y2="238.0" stroke="#0f172a" stroke-width="2" />
+<line x1="462.3" y1="232.0" x2="462.3" y2="244.0" stroke="#0f172a" stroke-width="2" />
+<line x1="487.7" y1="232.0" x2="487.7" y2="244.0" stroke="#0f172a" stroke-width="2" />
+<text x="497.7" y="243" font-size="12" font-weight="700" fill="#0f172a">₹16,993.97 <tspan font-size="11" font-weight="normal" fill="#64748b">(±₹645.06)</tspan></text>
+<rect x="140" y="270" width="98.9" height="28" fill="#dc2626" rx="4" />
+<text x="128" y="289" text-anchor="end" font-size="12" font-weight="600" fill="#0f172a">always_retry</text>
+<line x1="227.1" y1="284.0" x2="250.7" y2="284.0" stroke="#0f172a" stroke-width="2" />
+<line x1="227.1" y1="278.0" x2="227.1" y2="290.0" stroke="#0f172a" stroke-width="2" />
+<line x1="250.7" y1="278.0" x2="250.7" y2="290.0" stroke="#0f172a" stroke-width="2" />
+<text x="260.7" y="289" font-size="12" font-weight="700" fill="#0f172a">₹5,016.53 <tspan font-size="11" font-weight="normal" fill="#64748b">(±₹598.76)</tspan></text>
+<rect x="140" y="316" width="0.0" height="28" fill="#94a3b8" rx="4" />
+<text x="128" y="335" text-anchor="end" font-size="12" font-weight="600" fill="#0f172a">no_action</text>
+<line x1="140.0" y1="330.0" x2="150.9" y2="330.0" stroke="#0f172a" stroke-width="2" />
+<line x1="140.0" y1="324.0" x2="140.0" y2="336.0" stroke="#0f172a" stroke-width="2" />
+<line x1="150.9" y1="324.0" x2="150.9" y2="336.0" stroke="#0f172a" stroke-width="2" />
+<text x="160.9" y="335" font-size="12" font-weight="700" fill="#0f172a">₹0.00 <tspan font-size="11" font-weight="normal" fill="#64748b">(±₹554.08)</tspan></text>
+</svg>
+            </div>
+        </section>
+
+        <!-- 2.e Full Benchmark Table -->
+        <section class="card">
+            <div class="card-header">
+                <h2 class="card-title">Multi-Strategy Benchmark Performance Table</h2>
+                <p class="card-desc">
+                    Comprehensive accounting of net revenue, paired statistical differences, decision consistency, and regulatory metrics.
+                </p>
+            </div>
+            <div class="table-responsive">
+                <table>
+                    <thead>
+                        <tr>
+                            <th class="text-center">Rank</th>
+                            <th>Strategy</th>
+                            <th class="text-right">Mean Net (₹)</th>
+                            <th class="text-right">Paired Diff vs agent_rules</th>
+                            <th class="text-right">Net Range (₹)</th>
+                            <th class="text-right">Gross Recov %</th>
+                            <th class="text-right">Match Oracle %</th>
+                            <th class="text-right">Regret (₹)</th>
+                            <th class="text-center">Violations</th>
+                            <th class="text-center">Retries</th>
+                            <th class="text-center">Contacts</th>
+                            <th class="text-center">Escalations</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        
+        <tr>
+            <td class="text-center font-bold text-slate-500">1</td>
+            <td>
+                <div class="strategy-badge">
+                    <span class="strategy-dot" style="background-color: #7c3aed;"></span>
+                    <strong>oracle</strong>
+                </div>
+            </td>
+            <td class="text-right font-bold text-slate-900">₹27,509.45</td>
+            <td class="text-right text-slate-700">₹+5,832.16 ± ₹611.09</td>
+            <td class="text-right text-slate-600">₹5,363 – ₹54,238</td>
+            <td class="text-right font-medium">29.6%</td>
+            <td class="text-right font-medium">100.0%</td>
+            <td class="text-right text-slate-600">₹0.00</td>
+            <td class="text-center"><span class="badge-danger">1</span></td>
+            <td class="text-center font-medium">8</td>
+            <td class="text-center font-medium">22</td>
+            <td class="text-center font-medium">8</td>
+        </tr>
+        
+        <tr>
+            <td class="text-center font-bold text-slate-500">2</td>
+            <td>
+                <div class="strategy-badge">
+                    <span class="strategy-dot" style="background-color: #d97706;"></span>
+                    <strong>naive_rules</strong>
+                </div>
+            </td>
+            <td class="text-right font-bold text-slate-900">₹24,154.31</td>
+            <td class="text-right text-slate-700">₹+2,477.03 ± ₹593.10</td>
+            <td class="text-right text-slate-600">₹2,912 – ₹51,306</td>
+            <td class="text-right font-medium">28.7%</td>
+            <td class="text-right font-medium">78.9%</td>
+            <td class="text-right text-slate-600">₹3,355.14</td>
+            <td class="text-center"><span class="badge-danger">6</span></td>
+            <td class="text-center font-medium">14</td>
+            <td class="text-center font-medium">16</td>
+            <td class="text-center font-medium">8</td>
+        </tr>
+        
+        <tr>
+            <td class="text-center font-bold text-slate-500">3</td>
+            <td>
+                <div class="strategy-badge">
+                    <span class="strategy-dot" style="background-color: #059669;"></span>
+                    <strong>agent_rules</strong>
+                </div>
+            </td>
+            <td class="text-right font-bold text-slate-900">₹21,677.28</td>
+            <td class="text-right text-slate-700"><span class="badge-neutral">Baseline</span></td>
+            <td class="text-right text-slate-600">₹3,174 – ₹46,658</td>
+            <td class="text-right font-medium">23.3%</td>
+            <td class="text-right font-medium">68.4%</td>
+            <td class="text-right text-slate-600">₹5,832.16</td>
+            <td class="text-center"><span class="badge-success">0</span></td>
+            <td class="text-center font-medium">8</td>
+            <td class="text-center font-medium">14</td>
+            <td class="text-center font-medium">9</td>
+        </tr>
+        
+        <tr>
+            <td class="text-center font-bold text-slate-500">4</td>
+            <td>
+                <div class="strategy-badge">
+                    <span class="strategy-dot" style="background-color: #0284c7;"></span>
+                    <strong>agent_llm</strong>
+                </div>
+            </td>
+            <td class="text-right font-bold text-slate-900">₹21,259.24</td>
+            <td class="text-right text-slate-700">₹-418.05 ± ₹587.10</td>
+            <td class="text-right text-slate-600">₹4,871 – ₹47,149</td>
+            <td class="text-right font-medium">21.8%</td>
+            <td class="text-right font-medium">57.9%</td>
+            <td class="text-right text-slate-600">₹6,250.21</td>
+            <td class="text-center"><span class="badge-success">0</span></td>
+            <td class="text-center font-medium">4</td>
+            <td class="text-center font-medium">25</td>
+            <td class="text-center font-medium">2</td>
+        </tr>
+        
+        <tr>
+            <td class="text-center font-bold text-slate-500">5</td>
+            <td>
+                <div class="strategy-badge">
+                    <span class="strategy-dot" style="background-color: #4f46e5;"></span>
+                    <strong>message_only</strong>
+                </div>
+            </td>
+            <td class="text-right font-bold text-slate-900">₹16,993.97</td>
+            <td class="text-right text-slate-700">₹-4,683.31 ± ₹645.06</td>
+            <td class="text-right text-slate-600">₹2,317 – ₹38,301</td>
+            <td class="text-right font-medium">17.2%</td>
+            <td class="text-right font-medium">52.6%</td>
+            <td class="text-right text-slate-600">₹10,515.48</td>
+            <td class="text-center"><span class="badge-success">0</span></td>
+            <td class="text-center font-medium">0</td>
+            <td class="text-center font-medium">38</td>
+            <td class="text-center font-medium">0</td>
+        </tr>
+        
+        <tr>
+            <td class="text-center font-bold text-slate-500">6</td>
+            <td>
+                <div class="strategy-badge">
+                    <span class="strategy-dot" style="background-color: #dc2626;"></span>
+                    <strong>always_retry</strong>
+                </div>
+            </td>
+            <td class="text-right font-bold text-slate-900">₹5,016.53</td>
+            <td class="text-right text-slate-700">₹-16,660.75 ± ₹598.76</td>
+            <td class="text-right text-slate-600">₹-8,038 – ₹23,652</td>
+            <td class="text-right font-medium">13.2%</td>
+            <td class="text-right font-medium">21.1%</td>
+            <td class="text-right text-slate-600">₹22,492.92</td>
+            <td class="text-center"><span class="badge-danger">16</span></td>
+            <td class="text-center font-medium">38</td>
+            <td class="text-center font-medium">0</td>
+            <td class="text-center font-medium">0</td>
+        </tr>
+        
+        <tr>
+            <td class="text-center font-bold text-slate-500">7</td>
+            <td>
+                <div class="strategy-badge">
+                    <span class="strategy-dot" style="background-color: #94a3b8;"></span>
+                    <strong>no_action</strong>
+                </div>
+            </td>
+            <td class="text-right font-bold text-slate-900">₹0.00</td>
+            <td class="text-right text-slate-700">₹-21,677.28 ± ₹554.08</td>
+            <td class="text-right text-slate-600">₹0 – ₹0</td>
+            <td class="text-right font-medium">0.0%</td>
+            <td class="text-right font-medium">0.0%</td>
+            <td class="text-right text-slate-600">₹27,509.45</td>
+            <td class="text-center"><span class="badge-success">0</span></td>
+            <td class="text-center font-medium">0</td>
+            <td class="text-center font-medium">0</td>
+            <td class="text-center font-medium">0</td>
+        </tr>
+        
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- 2.f Full Sensitivity Table -->
+        <section class="card">
+            <div class="card-header">
+                <h2 class="card-title">Compliance Penalty Sensitivity Table</h2>
+                <p class="card-desc">
+                    Net recovery trajectory across regulatory penalty tiers. Break-even threshold is <strong>₹912.84</strong>.
+                </p>
+            </div>
+            <div class="table-responsive">
+                <table>
+                    <thead>
+                        <tr>
+                            <th class="text-center">Penalty Level</th>
+                            <th class="text-right">oracle</th><th class="text-right">naive_rules</th><th class="text-right">agent_rules</th><th class="text-right">agent_llm</th><th class="text-right">message_only</th><th class="text-right">always_retry</th><th class="text-right">no_action</th>
+                            <th class="text-center">Best Deployable Strategy</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr ><td class="font-bold text-slate-900 text-center">₹0</td><td class="text-right text-slate-700">₹28,159.94</td><td class="text-right text-slate-700">₹27,154.31</td><td class="text-right text-slate-700">₹21,677.28</td><td class="text-right text-slate-700">₹21,259.24</td><td class="text-right text-slate-700">₹16,993.97</td><td class="text-right text-slate-700">₹13,016.53</td><td class="text-right text-slate-700">₹0.00</td><td class="text-center"><span class="badge-deployable" style="background: #d9770615; color: #d97706; border: 1px solid #d9770640;">naive_rules</span></td></tr><tr ><td class="font-bold text-slate-900 text-center">₹250</td><td class="text-right text-slate-700">₹27,759.45</td><td class="text-right text-slate-700">₹25,654.31</td><td class="text-right text-slate-700">₹21,677.28</td><td class="text-right text-slate-700">₹21,259.24</td><td class="text-right text-slate-700">₹16,993.97</td><td class="text-right text-slate-700">₹9,016.53</td><td class="text-right text-slate-700">₹0.00</td><td class="text-center"><span class="badge-deployable" style="background: #d9770615; color: #d97706; border: 1px solid #d9770640;">naive_rules</span></td></tr><tr ><td class="font-bold text-slate-900 text-center">₹500</td><td class="text-right text-slate-700">₹27,509.45</td><td class="text-right text-slate-700">₹24,154.31</td><td class="text-right text-slate-700">₹21,677.28</td><td class="text-right text-slate-700">₹21,259.24</td><td class="text-right text-slate-700">₹16,993.97</td><td class="text-right text-slate-700">₹5,016.53</td><td class="text-right text-slate-700">₹0.00</td><td class="text-center"><span class="badge-deployable" style="background: #d9770615; color: #d97706; border: 1px solid #d9770640;">naive_rules</span></td></tr><tr class="highlight-row"><td class="font-bold text-slate-900 text-center">₹913</td><td class="text-right text-slate-700">₹27,096.45</td><td class="text-right text-slate-700">₹21,676.31</td><td class="text-right text-slate-700">₹21,677.28</td><td class="text-right text-slate-700">₹21,259.24</td><td class="text-right text-slate-700">₹16,993.97</td><td class="text-right text-danger font-bold">₹-1,591.46</td><td class="text-right text-slate-700">₹0.00</td><td class="text-center"><span class="badge-deployable" style="background: #05966915; color: #059669; border: 1px solid #05966940;">agent_rules</span></td></tr><tr ><td class="font-bold text-slate-900 text-center">₹1,500</td><td class="text-right text-slate-700">₹26,110.62</td><td class="text-right text-slate-700">₹18,154.31</td><td class="text-right text-slate-700">₹21,677.28</td><td class="text-right text-slate-700">₹21,259.24</td><td class="text-right text-slate-700">₹16,993.97</td><td class="text-right text-danger font-bold">₹-10,983.47</td><td class="text-right text-slate-700">₹0.00</td><td class="text-center"><span class="badge-deployable" style="background: #05966915; color: #059669; border: 1px solid #05966940;">agent_rules</span></td></tr><tr ><td class="font-bold text-slate-900 text-center">₹3,000</td><td class="text-right text-slate-700">₹26,110.62</td><td class="text-right text-slate-700">₹9,154.32</td><td class="text-right text-slate-700">₹21,677.28</td><td class="text-right text-slate-700">₹21,259.24</td><td class="text-right text-slate-700">₹16,993.97</td><td class="text-right text-danger font-bold">₹-34,983.46</td><td class="text-right text-slate-700">₹0.00</td><td class="text-center"><span class="badge-deployable" style="background: #05966915; color: #059669; border: 1px solid #05966940;">agent_rules</span></td></tr><tr ><td class="font-bold text-slate-900 text-center">₹5,000</td><td class="text-right text-slate-700">₹26,110.62</td><td class="text-right text-danger font-bold">₹-2,845.68</td><td class="text-right text-slate-700">₹21,677.28</td><td class="text-right text-slate-700">₹21,259.24</td><td class="text-right text-slate-700">₹16,993.97</td><td class="text-right text-danger font-bold">₹-66,983.46</td><td class="text-right text-slate-700">₹0.00</td><td class="text-center"><span class="badge-deployable" style="background: #05966915; color: #059669; border: 1px solid #05966940;">agent_rules</span></td></tr>
+                    </tbody>
+                </table>
+            </div>
+            <p class="footnote">
+                *Note: Oracle represents the theoretical upper bound reading the hidden recovery matrix directly and is excluded from 'Best Deployable Strategy'.
+            </p>
+        </section>
+
+        <!-- 2.g Compliance Panel -->
+        <section class="card">
+            <div class="card-header">
+                <h2 class="card-title">Regulatory Compliance & Operational Panel</h2>
+                <p class="card-desc">
+                    Enforcement of RBI e-mandate circulars, AFA challenge thresholds, and per-method retry caps.
+                </p>
+            </div>
+
+            <div class="compliance-grid">
+                <div class="compliance-kpi">
+                    <div class="kpi-title">Agent Violations</div>
+                    <div class="kpi-value text-success">0</div>
+                    <div class="kpi-desc">agent_rules and agent_llm maintain 100% regulatory compliance</div>
+                </div>
+                <div class="compliance-kpi">
+                    <div class="kpi-title">Naive Rulebook Violations</div>
+                    <div class="kpi-value text-danger">6</div>
+                    <div class="kpi-desc">Pre-debit notice and hard decline violations in naive_rules</div>
+                </div>
+                <div class="compliance-kpi">
+                    <div class="kpi-title">Always-Retry Violations</div>
+                    <div class="kpi-value text-danger">16</div>
+                    <div class="kpi-desc">Severe double-debit and non-compliance risk</div>
+                </div>
+                <div class="compliance-kpi">
+                    <div class="kpi-title">Break-Even Penalty</div>
+                    <div class="kpi-value" style="color: var(--warning);">₹912.84</div>
+                    <div class="kpi-desc">Penalty above which compliant agent strictly beats legacy rulebook</div>
+                </div>
+            </div>
+
+            <div class="table-responsive">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Strategy</th>
+                            <th class="text-center">Compliance Status</th>
+                            <th class="text-center">Violations</th>
+                            <th class="text-center">Retries Made</th>
+                            <th class="text-center">Contacts Sent</th>
+                            <th class="text-center">Escalated to Human</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        
+        <tr>
+            <td>
+                <div class="strategy-badge">
+                    <span class="strategy-dot" style="background-color: #7c3aed;"></span>
+                    <strong>oracle</strong>
+                </div>
+            </td>
+            <td class="text-center"><span class="badge-danger">1 Regulatory Violations</span></td>
+            <td class="text-center font-bold">1</td>
+            <td class="text-center">8</td>
+            <td class="text-center">22</td>
+            <td class="text-center">8</td>
+        </tr>
+        
+        <tr>
+            <td>
+                <div class="strategy-badge">
+                    <span class="strategy-dot" style="background-color: #d97706;"></span>
+                    <strong>naive_rules</strong>
+                </div>
+            </td>
+            <td class="text-center"><span class="badge-danger">6 Regulatory Violations</span></td>
+            <td class="text-center font-bold">6</td>
+            <td class="text-center">14</td>
+            <td class="text-center">16</td>
+            <td class="text-center">8</td>
+        </tr>
+        
+        <tr>
+            <td>
+                <div class="strategy-badge">
+                    <span class="strategy-dot" style="background-color: #059669;"></span>
+                    <strong>agent_rules</strong>
+                </div>
+            </td>
+            <td class="text-center"><span class="badge-success">Fully Compliant (0 Violations)</span></td>
+            <td class="text-center font-bold">0</td>
+            <td class="text-center">8</td>
+            <td class="text-center">14</td>
+            <td class="text-center">9</td>
+        </tr>
+        
+        <tr>
+            <td>
+                <div class="strategy-badge">
+                    <span class="strategy-dot" style="background-color: #0284c7;"></span>
+                    <strong>agent_llm</strong>
+                </div>
+            </td>
+            <td class="text-center"><span class="badge-success">Fully Compliant (0 Violations)</span></td>
+            <td class="text-center font-bold">0</td>
+            <td class="text-center">4</td>
+            <td class="text-center">25</td>
+            <td class="text-center">2</td>
+        </tr>
+        
+        <tr>
+            <td>
+                <div class="strategy-badge">
+                    <span class="strategy-dot" style="background-color: #4f46e5;"></span>
+                    <strong>message_only</strong>
+                </div>
+            </td>
+            <td class="text-center"><span class="badge-success">Fully Compliant (0 Violations)</span></td>
+            <td class="text-center font-bold">0</td>
+            <td class="text-center">0</td>
+            <td class="text-center">38</td>
+            <td class="text-center">0</td>
+        </tr>
+        
+        <tr>
+            <td>
+                <div class="strategy-badge">
+                    <span class="strategy-dot" style="background-color: #dc2626;"></span>
+                    <strong>always_retry</strong>
+                </div>
+            </td>
+            <td class="text-center"><span class="badge-danger">16 Regulatory Violations</span></td>
+            <td class="text-center font-bold">16</td>
+            <td class="text-center">38</td>
+            <td class="text-center">0</td>
+            <td class="text-center">0</td>
+        </tr>
+        
+        <tr>
+            <td>
+                <div class="strategy-badge">
+                    <span class="strategy-dot" style="background-color: #94a3b8;"></span>
+                    <strong>no_action</strong>
+                </div>
+            </td>
+            <td class="text-center"><span class="badge-success">Fully Compliant (0 Violations)</span></td>
+            <td class="text-center font-bold">0</td>
+            <td class="text-center">0</td>
+            <td class="text-center">0</td>
+            <td class="text-center">0</td>
+        </tr>
+        
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    </div>
+</body>
+</html>

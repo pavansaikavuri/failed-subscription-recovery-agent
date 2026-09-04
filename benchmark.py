@@ -18,7 +18,8 @@ from strategies import (
     populate_llm_cache,
 )
 from data.sample_batch import BATCH
-from pipeline import get_retry_cap, VALID_FAILURE_REASONS, DEDUPE_TTL_HOURS
+from pipeline import get_retry_cap, VALID_FAILURE_REASONS, DEDUPE_TTL_HOURS, POLICY_VERSION
+from report_generator import generate_benchmark_html
 
 
 class StrategyBenchmarkStats(BaseModel):
@@ -49,6 +50,7 @@ def run_benchmark(
     refresh_llm_cache: bool = False,
     verbose: bool = True,
     include_sweep: bool = True,
+    html_report_path: Optional[str] = "benchmark_report.html",
 ) -> Tuple[List[StrategyBenchmarkStats], str]:
     """
     Executes multi-strategy benchmark across 7 strategies over n_seeds (default 200)
@@ -251,8 +253,32 @@ def run_benchmark(
             f.write(md_table + "\n")
 
         if include_sweep:
-            sweep_md = run_penalty_sweep(batch=batch, n_seeds=n_seeds, save_to_file=True, verbose=verbose)
+            sweep_md, sweep_results, breakeven_penalty_inr = run_penalty_sweep(
+                batch=batch, n_seeds=n_seeds, save_to_file=True, verbose=verbose, return_details=True
+            )
             full_output += "\n\n" + sweep_md
+
+            if html_report_path:
+                metadata = {
+                    "batch_size": len(batch),
+                    "seeds": n_seeds,
+                    "total_at_risk_paise": total_at_risk_paise,
+                    "penalty_paise": penalty_paise,
+                    "composition_line": composition_line,
+                    "policy_version": POLICY_VERSION,
+                    "timestamp": timestamp_str,
+                }
+                html_content = generate_benchmark_html(
+                    benchmark_stats=benchmark_stats,
+                    sweep_results=sweep_results,
+                    breakeven_penalty_inr=breakeven_penalty_inr,
+                    metadata=metadata,
+                )
+                html_path = Path(html_report_path)
+                with open(html_path, "w", encoding="utf-8") as f:
+                    f.write(html_content)
+                if verbose:
+                    print(f"Benchmark HTML report successfully saved to: {html_path}")
 
         if verbose:
             print(f"Benchmark results successfully saved to: {out_path}")
@@ -266,7 +292,8 @@ def run_penalty_sweep(
     penalties_inr: List[int] = [0, 250, 500, 913, 1500, 3000, 5000],
     save_to_file: bool = True,
     verbose: bool = True,
-) -> str:
+    return_details: bool = False,
+) -> Any:
     """
     Evaluates all 7 strategies across varying regulatory violation penalty levels
     and dynamically derives the break-even penalty where agent_rules overtakes naive_rules.
@@ -350,6 +377,8 @@ def run_penalty_sweep(
             with open(out_path, "a", encoding="utf-8") as f:
                 f.write("\n\n" + sweep_table + "\n")
 
+    if return_details:
+        return sweep_table, sweep_results, breakeven_penalty_inr
     return sweep_table
 
 

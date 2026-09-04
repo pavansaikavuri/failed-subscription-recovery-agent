@@ -522,6 +522,12 @@ def main():
         action="store_true",
         help="Read audit_log.jsonl back and print counts by decision_source, guard_triggered, and status",
     )
+    parser.add_argument(
+        "--html-report",
+        type=str,
+        default="benchmark_report.html",
+        help="Path to generate standalone HTML benchmark report (default: benchmark_report.html)",
+    )
 
     args = parser.parse_args()
 
@@ -553,7 +559,12 @@ def main():
         run_penalty_sweep(BATCH, n_seeds=args.seeds if args.seeds > 1 else 200)
     elif args.benchmark:
         from benchmark import run_benchmark
-        run_benchmark(BATCH, n_seeds=args.seeds if args.seeds > 1 else 200, refresh_llm_cache=args.refresh_llm_cache)
+        run_benchmark(
+            BATCH,
+            n_seeds=args.seeds if args.seeds > 1 else 200,
+            refresh_llm_cache=args.refresh_llm_cache,
+            html_report_path=args.html_report,
+        )
     elif args.demo_retry_exhaustion:
         print("\n=== DEMO MODE: RETRY EXHAUSTION ===")
         print("Trigger: attempt_count >= per-method retry_caps -> Force stop_and_writeoff\n")
