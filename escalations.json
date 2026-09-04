@@ -4,29 +4,19 @@
     "amount_paise": 199900,
     "failure_reason": "issuer_declined",
     "escalation_trigger": "rule_escalation",
-    "confidence": 0.8,
-    "decision_reason": "Hard decline reason 'issuer_declined'; non-retryable per policy.",
-    "reason": "Hard decline reason 'issuer_declined'; non-retryable per policy.",
+    "confidence": 1.0,
+    "decision_reason": "Oracle optimal expected net action (E[net]=\u20b9179.84)",
+    "reason": "Oracle optimal expected net action (E[net]=\u20b9179.84)",
     "payment_state": "confirmed_failed"
   },
   {
-    "record_id": "pay_In13mNoPqRsT32",
-    "amount_paise": 29900,
-    "failure_reason": "afa_required_not_completed",
+    "record_id": "pay_Ex09iJkLmNoP98",
+    "amount_paise": 699900,
+    "failure_reason": "issuer_declined",
     "escalation_trigger": "rule_escalation",
-    "confidence": 0.65,
-    "decision_reason": "AFA challenge abandoned; requires customer authentication under RBI threshold (\u20b915,000).",
-    "reason": "AFA challenge abandoned; requires customer authentication under RBI threshold (\u20b915,000).",
-    "payment_state": "confirmed_failed"
-  },
-  {
-    "record_id": "pay_In15oPqStUvW54",
-    "amount_paise": 849000,
-    "failure_reason": "mandate_lapsed_on_reissue",
-    "escalation_trigger": "rule_escalation",
-    "confidence": 0.8,
-    "decision_reason": "Hard decline reason 'mandate_lapsed_on_reissue'; non-retryable per policy.",
-    "reason": "Hard decline reason 'mandate_lapsed_on_reissue'; non-retryable per policy.",
+    "confidence": 1.0,
+    "decision_reason": "Oracle optimal expected net action (E[net]=\u20b9499.59)",
+    "reason": "Oracle optimal expected net action (E[net]=\u20b9499.59)",
     "payment_state": "confirmed_failed"
   },
   {
@@ -34,9 +24,9 @@
     "amount_paise": 450000,
     "failure_reason": "issuer_declined",
     "escalation_trigger": "rule_escalation",
-    "confidence": 0.8,
-    "decision_reason": "Hard decline reason 'issuer_declined'; non-retryable per policy.",
-    "reason": "Hard decline reason 'issuer_declined'; non-retryable per policy.",
+    "confidence": 1.0,
+    "decision_reason": "Oracle optimal expected net action (E[net]=\u20b9840.00)",
+    "reason": "Oracle optimal expected net action (E[net]=\u20b9840.00)",
     "payment_state": "confirmed_failed"
   },
   {
@@ -44,9 +34,19 @@
     "amount_paise": 199900,
     "failure_reason": "afa_required_not_completed",
     "escalation_trigger": "rule_escalation",
-    "confidence": 0.65,
-    "decision_reason": "AFA challenge abandoned; requires customer authentication under RBI threshold (\u20b915,000).",
-    "reason": "AFA challenge abandoned; requires customer authentication under RBI threshold (\u20b915,000).",
+    "confidence": 1.0,
+    "decision_reason": "Oracle optimal expected net action (E[net]=\u20b9374.74)",
+    "reason": "Oracle optimal expected net action (E[net]=\u20b9374.74)",
+    "payment_state": "confirmed_failed"
+  },
+  {
+    "record_id": "pay_In23wXyzaBCD32",
+    "amount_paise": 299900,
+    "failure_reason": "insufficient_funds",
+    "escalation_trigger": "rule_escalation",
+    "confidence": 1.0,
+    "decision_reason": "Oracle optimal expected net action (E[net]=\u20b9637.24)",
+    "reason": "Oracle optimal expected net action (E[net]=\u20b9637.24)",
     "payment_state": "confirmed_failed"
   },
   {
@@ -54,29 +54,9 @@
     "amount_paise": 349900,
     "failure_reason": "issuer_declined",
     "escalation_trigger": "rule_escalation",
-    "confidence": 0.8,
-    "decision_reason": "Hard decline reason 'issuer_declined'; non-retryable per policy.",
-    "reason": "Hard decline reason 'issuer_declined'; non-retryable per policy.",
-    "payment_state": "confirmed_failed"
-  },
-  {
-    "record_id": "pay_In31eFgHIJKL10",
-    "amount_paise": 899900,
-    "failure_reason": "mandate_lapsed_on_reissue",
-    "escalation_trigger": "rule_escalation",
-    "confidence": 0.8,
-    "decision_reason": "Hard decline reason 'mandate_lapsed_on_reissue'; non-retryable per policy.",
-    "reason": "Hard decline reason 'mandate_lapsed_on_reissue'; non-retryable per policy.",
-    "payment_state": "confirmed_failed"
-  },
-  {
-    "record_id": "pay_In35iJkLMNOP54",
-    "amount_paise": 29900,
-    "failure_reason": "afa_required_not_completed",
-    "escalation_trigger": "rule_escalation",
-    "confidence": 0.65,
-    "decision_reason": "AFA challenge abandoned; requires customer authentication under RBI threshold (\u20b915,000).",
-    "reason": "AFA challenge abandoned; requires customer authentication under RBI threshold (\u20b915,000).",
+    "confidence": 1.0,
+    "decision_reason": "Oracle optimal expected net action (E[net]=\u20b9283.00)",
+    "reason": "Oracle optimal expected net action (E[net]=\u20b9283.00)",
     "payment_state": "confirmed_failed"
   },
   {
@@ -84,9 +64,19 @@
     "amount_paise": 649900,
     "failure_reason": "issuer_declined",
     "escalation_trigger": "rule_escalation",
-    "confidence": 0.8,
-    "decision_reason": "Hard decline reason 'issuer_declined'; non-retryable per policy.",
-    "reason": "Hard decline reason 'issuer_declined'; non-retryable per policy.",
+    "confidence": 1.0,
+    "decision_reason": "Oracle optimal expected net action (E[net]=\u20b9922.34)",
+    "reason": "Oracle optimal expected net action (E[net]=\u20b9922.34)",
+    "payment_state": "confirmed_failed"
+  },
+  {
+    "record_id": "pay_In39mNoPQRST98",
+    "amount_paise": 99900,
+    "failure_reason": "insufficient_funds",
+    "escalation_trigger": "rule_escalation",
+    "confidence": 1.0,
+    "decision_reason": "Oracle optimal expected net action (E[net]=\u20b946.68)",
+    "reason": "Oracle optimal expected net action (E[net]=\u20b946.68)",
     "payment_state": "confirmed_failed"
   }
 ]

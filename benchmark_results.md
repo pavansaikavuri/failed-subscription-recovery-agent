@@ -1,6 +1,6 @@
 # Benchmark Results – Recovery Agent Multi-Strategy Evaluation
 
-**Timestamp:** 2026-09-04 14:27:48 | **Batch Size:** 40 records | **Seeds:** 200 | **Total at Risk:** ₹98,952.00 | **Penalty:** ₹500
+**Timestamp:** 2026-09-04 16:55:41 | **Batch Size:** 40 records | **Seeds:** 200 | **Total at Risk:** ₹98,952.00 | **Penalty:** ₹500
 
 `agent_llm composition: 31 live LLM / 0 rule fallback (cache miss) / 7 deterministic guard`
 
@@ -30,58 +30,3 @@
 | ₹5,000 | ₹0.00 | ₹-66,983.46 | ₹16,993.97 | ₹-2,845.68 | ₹21,677.28 | ₹21,259.24 | ₹26,110.62 | **agent_rules** |
 
 *Note: Oracle represents the theoretical upper bound reading the hidden recovery matrix directly and is excluded from 'Best Deployable Strategy'.*
-
-
-## Probability Sensitivity
-
-Evaluation of all 7 strategies across ±20% variations in base recovery probabilities under two penalty regimes: baseline penalty (₹500) and derived compliance break-even penalty (₹913).
-
-### Probability Sensitivity at ₹500 Penalty
-
-Evaluation across ±20% probability variations (200 seeds each, ₹500 penalty per violation).
-
-| Multiplier | **no_action** | **always_retry** | **message_only** | **naive_rules** | **agent_rules** | **agent_llm** | **oracle** | Best Deployable Strategy |
-| :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| 0.8x (-20%) | ₹0.00 | ₹2,434.34 | ₹13,375.69 | ₹18,339.21 | ₹17,235.35 | ₹16,620.99 | ₹21,547.12 | **naive_rules** |
-| 0.9x (-10%) | ₹0.00 | ₹4,024.47 | ₹15,199.20 | ₹21,496.35 | ₹19,712.19 | ₹19,146.79 | ₹24,786.73 | **naive_rules** |
-| 1.0x (Baseline) | ₹0.00 | ₹5,016.53 | ₹16,993.97 | ₹24,154.31 | ₹21,677.28 | ₹21,259.24 | ₹27,509.45 | **naive_rules** |
-| 1.1x (+10%) | ₹0.00 | ₹6,201.23 | ₹18,886.15 | ₹27,204.08 | ₹24,043.33 | ₹23,682.72 | ₹30,546.15 | **naive_rules** |
-| 1.2x (+20%) | ₹0.00 | ₹7,617.15 | ₹20,963.58 | ₹30,588.94 | ₹27,023.55 | ₹26,397.72 | ₹34,087.42 | **naive_rules** |
-
-*Note: Oracle represents theoretical upper bound reading the scaled recovery matrix and is excluded from 'Best Deployable Strategy'.*
-
-
----
-
-### Probability Sensitivity at ₹913 Penalty
-
-Evaluation across ±20% probability variations (200 seeds each, ₹913 penalty per violation).
-
-| Multiplier | **no_action** | **always_retry** | **message_only** | **naive_rules** | **agent_rules** | **agent_llm** | **oracle** | Best Deployable Strategy |
-| :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| 0.8x (-20%) | ₹0.00 | ₹-4,173.66 | ₹13,375.69 | ₹15,861.21 | ₹17,235.35 | ₹16,620.99 | ₹21,134.12 | **agent_rules** |
-| 0.9x (-10%) | ₹0.00 | ₹-2,583.53 | ₹15,199.20 | ₹19,018.35 | ₹19,712.19 | ₹19,146.79 | ₹24,373.73 | **agent_rules** |
-| 1.0x (Baseline) | ₹0.00 | ₹-1,591.46 | ₹16,993.97 | ₹21,676.31 | ₹21,677.28 | ₹21,259.24 | ₹27,096.45 | **agent_rules** |
-| 1.1x (+10%) | ₹0.00 | ₹-406.77 | ₹18,886.15 | ₹24,726.08 | ₹24,043.33 | ₹23,682.72 | ₹30,133.15 | **naive_rules** |
-| 1.2x (+20%) | ₹0.00 | ₹1,009.15 | ₹20,963.58 | ₹28,110.94 | ₹27,023.55 | ₹26,397.72 | ₹33,674.42 | **naive_rules** |
-
-*Note: Oracle represents theoretical upper bound reading the scaled recovery matrix and is excluded from 'Best Deployable Strategy'.*
-
-### Probability Sensitivity Analysis
-
-- **Behavior at Base Penalty (₹500):** `naive_rules` achieves higher net recovery across all multipliers because the ₹500 penalty is below break-even, allowing non-compliant direct retries to absorb the regulatory discount.
-- **Behavior at Break-Even Penalty (₹913):** At the ₹913 break-even penalty, best deployable strategy across multipliers is: 0.8x: agent_rules, 0.9x: agent_rules, 1.0x: agent_rules, 1.1x: naive_rules, 1.2x: naive_rules.
-- **Head-to-Head Robustness:** `agent_rules` beats `always_retry` and `message_only` at every single probability multiplier in both penalty regimes.
-- **Calibration Benchmark:** `naive_rules` gross recovery spans 22.8% to 35.2% across the ±20% sweep, tightly encompassing published industry baselines (~15% basic retry recovery).
-- **Robustness Verdict:** **The conclusions are fully robust to ±20% error in the assumed probabilities.**
-
-
-
-## High-Value Escalation Guard (Isolated Batch)
-
-To preserve statistical validity, high-value payments (>₹50,000 / 5,000,000 paise) are evaluated in an isolated cohort (`HIGH_VALUE_BATCH`) via `python pipeline.py --demo-high-value` rather than merged into the primary benchmark.
-
-- **Rationale:** The 3 enterprise records (₹85,000, ₹62,000, and ₹1,20,000) represent ₹267,000 of exposure (73% of total combined volume). Including them in a 40-record sample would cause 3 records to dominate aggregate variance and distort the empirical break-even penalty.
-- **Deterministic Policy:** Under `agent_rules` and `agent_llm`, Guard 0 intercepts all 3 payments before any model call or retry attempt, routing them directly to `escalate_to_human` with reason *"High-value payment requires merchant approval."* (`guard_fired="high_value_escalation"`).
-- **Compliance & Risk:** Autonomous retries are strictly prohibited above ₹50,000, eliminating double-debit or regulatory violation exposure on enterprise revenue.
-
