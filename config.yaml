@@ -33,8 +33,3 @@ communication:
 
 dedupe:
   ttl_hours: 72                                      # Webhook idempotency window
-
-escalation_thresholds_paise:
-  human_approval_above: 5000000                      # Rs 50,000
-
-version: "1.0.0"

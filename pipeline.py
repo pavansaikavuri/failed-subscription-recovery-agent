@@ -8,6 +8,7 @@ from datetime import datetime, timedelta
 from collections import Counter
 from typing import Dict, List, Tuple, Optional, Callable
 from dotenv import load_dotenv
+import hashlib
 import yaml
 from pydantic import BaseModel
 
@@ -22,13 +23,8 @@ if sys.platform == "win32" and hasattr(sys.stdout, "reconfigure"):
         pass
 
 from models import FailedPayment, InterventionDecision, AuditEntry
-from outcome_model import (
-    simulate_outcome,
-    OutcomeResult,
-    get_effective_probability,
-    VIOLATION_PENALTY_PAISE,
-)
-from data.sample_batch import BATCH, HIGH_VALUE_BATCH
+from outcome_model import simulate_outcome, OutcomeResult, get_effective_probability
+from data.sample_batch import BATCH
 
 load_dotenv()
 
@@ -57,9 +53,27 @@ CONFIDENCE_THRESHOLD = float(CONFIG.get("confidence_threshold", 0.60))
 AFA_THRESHOLD_INR = float(CONFIG.get("afa_thresholds_inr", {}).get("e_mandate", 15000))
 DEDUPE_TTL_HOURS = float(CONFIG.get("dedupe", {}).get("ttl_hours", 72))
 
-ESCALATION_THRESHOLDS = CONFIG.get("escalation_thresholds_paise", {})
-HUMAN_APPROVAL_ABOVE_PAISE = int(ESCALATION_THRESHOLDS.get("human_approval_above", 5000000))
-CONFIG_VERSION = str(CONFIG.get("version", "1.0.0"))
+
+def compute_policy_version() -> str:
+    """Computes a SHA256 hash of relevant config.yaml values: retry_caps, hard_decline_reasons, confidence_threshold."""
+    policy_data = {
+        "retry_caps": RETRY_CAPS,
+        "hard_decline_reasons": sorted(list(HARD_DECLINE_REASONS)),
+        "confidence_threshold": CONFIDENCE_THRESHOLD,
+    }
+    encoded = json.dumps(policy_data, sort_keys=True).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()[:12]
+
+
+POLICY_VERSION = compute_policy_version()
+_policy_version_printed = False
+
+
+def print_policy_version_once():
+    global _policy_version_printed
+    if not _policy_version_printed:
+        print(f"Policy Version: {POLICY_VERSION}")
+        _policy_version_printed = True
 
 VALID_FAILURE_REASONS = {
     "mandate_not_registered",
@@ -100,70 +114,56 @@ def get_retry_cap(payment_method: str) -> int:
     return RETRY_CAPS.get(payment_method.lower(), RETRY_CAPS.get("default", 3))
 
 
-def write_audit_log_jsonl(
-    entries: List[AuditEntry],
-    file_path: Optional[Path] = None,
-    append: bool = False,
-) -> None:
-    """Writes audit entries to logs/audit_log.jsonl with exactly required fields."""
-    if file_path is None:
-        file_path = Path(__file__).parent / "logs" / "audit_log.jsonl"
-    file_path.parent.mkdir(parents=True, exist_ok=True)
-    mode = "a" if append else "w"
-    with open(file_path, mode, encoding="utf-8") as f:
-        for entry in entries:
-            f.write(json.dumps(entry.to_audit_log_dict()) + "\n")
-
-
 def process_batch(
-    batch: List[FailedPayment],
+    batch: List[dict],
     strategy: Optional[Callable[[FailedPayment], InterventionDecision]] = None,
-    n_seeds: int = 1,
+    use_llm: bool = True,
     seed: int = 0,
-    penalty_paise: int = VIOLATION_PENALTY_PAISE,
-    prob_multiplier: float = 1.0,
-    write_audit_log: bool = False,
-    append_audit_log: bool = False,
+    n_seeds: int = 1,
     verbose: bool = True,
     clear_ledger: bool = True,
+    audit_out: Optional[str] = "audit_log.jsonl",
+    escalations_out: Optional[str] = "escalations.json",
 ) -> BatchResult:
     """
-    Universal recovery execution pipeline.
-    Keeps universal machinery:
-      1. Rejection of out-of-scope records
-      2. Idempotency ledger
-      3. Outcome simulation via independent outcome model
-      4. Financial accounting & audit trail
-    All intelligence, guards, thresholds, and overrides live in the strategy.
+    Universal batch execution engine:
+    1. Rejects out-of-scope / malformed failure reasons gracefully
+    2. Enforces idempotency ledger deduplication
+    3. Calls strategy(payment) to obtain decision
+    4. Simulates genuine recovery outcome via outcome_model
+    5. Returns structured accounting and audit records
     """
     global IDEMPOTENCY_LEDGER
+    print_policy_version_once()
     if clear_ledger:
         IDEMPOTENCY_LEDGER = {}
-    
+
+    # Import strategies lazily if not provided
     if strategy is None:
-        from strategies import strategy_agent_rules
-        strategy = strategy_agent_rules
+        from strategies import strategy_agent_llm, strategy_agent_rules
+        strategy = strategy_agent_llm if use_llm else strategy_agent_rules
 
     if n_seeds > 1:
         results = [
             process_batch(
                 batch,
                 strategy=strategy,
-                n_seeds=1,
+                use_llm=use_llm,
                 seed=s,
-                penalty_paise=penalty_paise,
-                prob_multiplier=prob_multiplier,
-                write_audit_log=(write_audit_log and s == 0),
+                n_seeds=1,
                 verbose=False,
+                clear_ledger=True,
+                audit_out=audit_out if s == 0 else None,
+                escalations_out=escalations_out if s == 0 else None,
             )
             for s in range(n_seeds)
         ]
         mean_net = sum(r.net_recovered_paise for r in results) / n_seeds
-        mean_gross = sum(r.total_gross_recovered_paise for r in results) / n_seeds
         min_net = min(r.net_recovered_paise for r in results)
         max_net = max(r.net_recovered_paise for r in results)
-        at_risk = results[0].total_at_risk_paise
+        mean_gross = sum(r.total_gross_recovered_paise for r in results) / n_seeds
         expected = results[0].expected_recoverable_paise
+        at_risk = results[0].total_at_risk_paise
 
         print(f"\n=== MULTI-SEED EVALUATION (n_seeds={n_seeds}) ===")
         print(f"At risk:                  ₹{at_risk / 100:,.2f}")
@@ -175,6 +175,7 @@ def process_batch(
 
     action_counts = Counter()
     audit_log: List[AuditEntry] = []
+    escalations_data: List[dict] = []
     total_at_risk_paise = 0
     total_gross_recovered_paise = 0
     total_cost_paise = 0
@@ -190,9 +191,9 @@ def process_batch(
     now = datetime.now()
 
     for row in batch:
-        record_id = row.get("id", "unknown") if isinstance(row, dict) else getattr(row, "id", "unknown")
+        record_id = row.get("id") if isinstance(row, dict) else getattr(row, "id", "unknown")
+        raw_reason = row.get("failure_reason") if isinstance(row, dict) else getattr(row, "failure_reason", "")
         amount_paise = row.get("amount_paise", 0) if isinstance(row, dict) else getattr(row, "amount_paise", 0)
-        raw_reason = row.get("failure_reason", "") if isinstance(row, dict) else getattr(row, "failure_reason", "")
 
         total_at_risk_paise += amount_paise
 
@@ -207,7 +208,8 @@ def process_batch(
                 max_retries_left=0,
                 escalate=False,
                 decision_source="guard",
-                guard_fired="out_of_scope_rejection",
+                guard_triggered="out_of_scope",
+                model_version="guard-v1",
             )
             entry = AuditEntry(
                 timestamp=now,
@@ -220,11 +222,10 @@ def process_batch(
                 cost_paise=0,
                 violation=False,
                 penalty_paise=0,
-                case_id=f"case_{record_id}",
+                model_version="guard-v1",
+                policy_version=POLICY_VERSION,
                 decision_source="guard",
-                guard_fired="out_of_scope_rejection",
-                seed=seed,
-                config_version=CONFIG_VERSION,
+                guard_triggered="out_of_scope",
             )
             audit_log.append(entry)
             rejected_count += 1
@@ -242,13 +243,13 @@ def process_batch(
         if action == "stop_and_writeoff":
             written_off_count += 1
 
-        # 3. Universal Idempotency ledger check
+        # 3. Universal Idempotency ledger check (dedupe.ttl_hours window)
         ledger_key = (payment.id, action)
         if ledger_key in IDEMPOTENCY_LEDGER:
             last_executed = IDEMPOTENCY_LEDGER[ledger_key]
             if (now - last_executed) < timedelta(hours=DEDUPE_TTL_HOURS):
                 if verbose:
-                    print(f"[{payment.id}] DUPLICATE SUPPRESSED – action '{action}' already executed")
+                    print(f"[{payment.id}] DUPLICATE SUPPRESSED – action '{action}' already executed within {DEDUPE_TTL_HOURS}h")
                 entry = AuditEntry(
                     timestamp=now,
                     record_id=payment.id,
@@ -260,11 +261,10 @@ def process_batch(
                     cost_paise=0,
                     violation=False,
                     penalty_paise=0,
-                    case_id=f"case_{payment.id}",
-                    decision_source=decision.decision_source,
-                    guard_fired=decision.guard_fired or "idempotency_deduplication",
-                    seed=seed,
-                    config_version=CONFIG_VERSION,
+                    model_version="guard-v1",
+                    policy_version=POLICY_VERSION,
+                    decision_source="guard",
+                    guard_triggered="idempotency_ledger",
                 )
                 audit_log.append(entry)
                 continue
@@ -272,15 +272,10 @@ def process_batch(
         # Record into idempotency ledger
         IDEMPOTENCY_LEDGER[ledger_key] = now
 
-        # 4. Universal Outcome Simulation
+        # 4. Universal Outcome Simulation via independent outcome model
         retry_cap = get_retry_cap(payment.payment_method)
         outcome: OutcomeResult = simulate_outcome(
-            payment,
-            action,
-            seed=seed,
-            retry_cap=retry_cap,
-            penalty_amount_paise=penalty_paise,
-            prob_multiplier=prob_multiplier,
+            payment, action, seed=seed, retry_cap=retry_cap
         )
 
         expected_prob = outcome.effective_probability
@@ -306,6 +301,10 @@ def process_batch(
         else:
             status = "failed"
 
+        dec_source = getattr(decision, "decision_source", None) or ("guard" if getattr(decision, "guard_triggered", None) else "rules")
+        mod_version = getattr(decision, "model_version", None) or ("guard-v1" if dec_source == "guard" else "rules-v1")
+        guard_trig = getattr(decision, "guard_triggered", None)
+
         entry = AuditEntry(
             timestamp=now,
             record_id=payment.id,
@@ -317,24 +316,42 @@ def process_batch(
             cost_paise=outcome.cost_paise,
             violation=outcome.violation,
             penalty_paise=outcome.penalty_paise,
-            case_id=f"case_{payment.id}",
-            decision_source=decision.decision_source,
-            guard_fired=decision.guard_fired,
-            seed=seed,
-            config_version=CONFIG_VERSION,
+            model_version=mod_version,
+            policy_version=POLICY_VERSION,
+            decision_source=dec_source,
+            guard_triggered=guard_trig,
         )
         audit_log.append(entry)
+
+        # Track human escalations for separate export
+        if action == "escalate_to_human" or decision.escalate:
+            p_state = getattr(payment, "payment_state", "confirmed_failed")
+            if p_state != "confirmed_failed":
+                esc_trigger = "ambiguous_payment_state"
+            elif getattr(decision, "degraded_mode", False) or "degraded" in decision.reason.lower() or "llm unavailable" in decision.reason.lower():
+                esc_trigger = "model_unavailable"
+            elif decision.confidence < CONFIDENCE_THRESHOLD:
+                esc_trigger = "low_confidence"
+            else:
+                esc_trigger = "rule_escalation"
+
+            escalations_data.append({
+                "record_id": payment.id,
+                "amount_paise": payment.amount_paise,
+                "failure_reason": payment.failure_reason,
+                "escalation_trigger": esc_trigger,
+                "confidence": round(float(decision.confidence), 4),
+                "decision_reason": decision.reason,
+                "reason": decision.reason,
+                "payment_state": p_state,
+            })
 
         if verbose:
             recovery_str = f" [RECOVERED ₹{outcome.recovered_paise/100:,.2f}]" if outcome.recovered_paise > 0 else ""
             violation_str = " [COMPLIANCE VIOLATION]" if outcome.violation else ""
-            guard_str = f" [GUARD: {decision.guard_fired}]" if decision.guard_fired else ""
             print(
-                f"[{payment.id}] {payment.failure_reason} (₹{payment.amount_paise/100:,.2f}) → {action} (conf={decision.confidence:.2f}){guard_str}{recovery_str}{violation_str}"
+                f"[{payment.id}] {payment.failure_reason} → {action} (conf={decision.confidence:.2f}){recovery_str}{violation_str}"
             )
-
-    if write_audit_log and seed == 0:
-        write_audit_log_jsonl(audit_log, append=append_audit_log)
 
     net_recovered_paise = total_gross_recovered_paise - total_cost_paise - total_penalty_paise
     recovery_rate_pct = (total_gross_recovered_paise / total_at_risk_paise * 100) if total_at_risk_paise > 0 else 0.0
@@ -356,6 +373,21 @@ def process_batch(
         action_counts=dict(action_counts),
         audit_log=audit_log,
     )
+
+    # Write audit log to disk as newline-delimited JSON (overwrite per run)
+    if audit_out:
+        out_path = Path(audit_out)
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(out_path, "w", encoding="utf-8") as f:
+            for entry in audit_log:
+                f.write(entry.model_dump_json() + "\n")
+
+    # Export escalations separately to escalations.json (overwrite per run)
+    if escalations_out:
+        esc_path = Path(escalations_out)
+        esc_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(esc_path, "w", encoding="utf-8") as f:
+            json.dump(escalations_data, f, indent=2)
 
     if verbose:
         print("\n=== RECOVERY PIPELINE SUMMARY ===")
@@ -380,6 +412,49 @@ def process_batch(
         print(f"  • Escalated to human:      {escalations_count}")
 
     return batch_result
+
+
+def print_audit_summary(audit_path: str = "audit_log.jsonl"):
+    """Reads audit_log.jsonl back from disk and prints counts by decision_source, guard_triggered, and status."""
+    path = Path(audit_path)
+    if not path.exists():
+        print(f"Error: Audit log file not found at: {path}")
+        return
+
+    by_decision_source = Counter()
+    by_guard_triggered = Counter()
+    by_status = Counter()
+    total_entries = 0
+
+    with open(path, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            record = json.loads(line)
+            total_entries += 1
+
+            source = record.get("decision_source", "unknown")
+            by_decision_source[source] += 1
+
+            guard = record.get("guard_triggered")
+            guard_label = str(guard) if guard is not None else "null"
+            by_guard_triggered[guard_label] += 1
+
+            status = record.get("status", "unknown")
+            by_status[status] += 1
+
+    print(f"\n=== AUDIT SUMMARY ({path.name}) ===")
+    print(f"Total entries: {total_entries}")
+    print("\nCounts by decision_source:")
+    for src, count in sorted(by_decision_source.items()):
+        print(f"  • {src}: {count}")
+    print("\nCounts by guard_triggered:")
+    for guard, count in sorted(by_guard_triggered.items()):
+        print(f"  • {guard}: {count}")
+    print("\nCounts by status:")
+    for st, count in sorted(by_status.items()):
+        print(f"  • {st}: {count}")
 
 
 def main():
@@ -415,11 +490,6 @@ def main():
         help="Run sensitivity sweep across multiple compliance penalty levels",
     )
     parser.add_argument(
-        "--sweep-probabilities",
-        action="store_true",
-        help="Run sensitivity sweep across multiple recovery probability multipliers (0.8x to 1.2x)",
-    )
-    parser.add_argument(
         "--demo-out-of-scope",
         action="store_true",
         help="Demo out-of-scope / malformed failure_reason rejection",
@@ -430,25 +500,45 @@ def main():
         help=f"Demo low-confidence escalation override (confidence < {CONFIDENCE_THRESHOLD:.2f})",
     )
     parser.add_argument(
-        "--demo-high-value",
-        action="store_true",
-        help="Demo high-value monetary threshold escalation guard (> ₹50,000)",
-    )
-    parser.add_argument(
         "--seeds",
         type=int,
         default=1,
         help="Number of evaluation seeds to run (default: 1)",
     )
     parser.add_argument(
-        "--penalty",
-        type=int,
-        default=500,
-        help="Compliance penalty per violation in INR (default: 500)",
+        "--audit-out",
+        type=str,
+        default="audit_log.jsonl",
+        help="Path to write the JSONL audit log (default: audit_log.jsonl)",
+    )
+    parser.add_argument(
+        "--escalations-out",
+        type=str,
+        default="escalations.json",
+        help="Path to export human escalations JSON (default: escalations.json)",
+    )
+    parser.add_argument(
+        "--audit-summary",
+        action="store_true",
+        help="Read audit_log.jsonl back and print counts by decision_source, guard_triggered, and status",
     )
 
     args = parser.parse_args()
-    penalty_paise = args.penalty * 100
+
+    print_policy_version_once()
+
+    if args.audit_summary and not (
+        args.rules_only
+        or args.benchmark
+        or args.populate_llm_cache
+        or args.refresh_llm_cache
+        or args.sweep_penalty
+        or args.demo_retry_exhaustion
+        or args.demo_out_of_scope
+        or args.demo_low_confidence
+    ):
+        print_audit_summary(args.audit_out)
+        return
 
     if args.populate_llm_cache:
         from strategies import populate_llm_cache
@@ -461,17 +551,9 @@ def main():
     elif args.sweep_penalty:
         from benchmark import run_penalty_sweep
         run_penalty_sweep(BATCH, n_seeds=args.seeds if args.seeds > 1 else 200)
-    elif args.sweep_probabilities:
-        from benchmark import run_probability_sweep
-        run_probability_sweep(BATCH, n_seeds=args.seeds if args.seeds > 1 else 200, penalty_paise=penalty_paise)
     elif args.benchmark:
         from benchmark import run_benchmark
-        run_benchmark(
-            BATCH,
-            n_seeds=args.seeds if args.seeds > 1 else 200,
-            penalty_paise=penalty_paise,
-            refresh_llm_cache=args.refresh_llm_cache,
-        )
+        run_benchmark(BATCH, n_seeds=args.seeds if args.seeds > 1 else 200, refresh_llm_cache=args.refresh_llm_cache)
     elif args.demo_retry_exhaustion:
         print("\n=== DEMO MODE: RETRY EXHAUSTION ===")
         print("Trigger: attempt_count >= per-method retry_caps -> Force stop_and_writeoff\n")
@@ -482,7 +564,7 @@ def main():
             )
         ]
         from strategies import strategy_agent_rules
-        process_batch(demo_batch, strategy=strategy_agent_rules)
+        process_batch(demo_batch, strategy=strategy_agent_rules, audit_out=args.audit_out, escalations_out=args.escalations_out)
     elif args.demo_out_of_scope:
         print("\n=== DEMO MODE: OUT OF SCOPE / MALFORMED ===")
         print("Trigger: failure_reason not in 9 valid Indian reasons\n")
@@ -491,7 +573,7 @@ def main():
             if (row.get("failure_reason", "") if isinstance(row, dict) else row.failure_reason) not in VALID_FAILURE_REASONS
         ]
         from strategies import strategy_agent_rules
-        process_batch(demo_batch, strategy=strategy_agent_rules)
+        process_batch(demo_batch, strategy=strategy_agent_rules, audit_out=args.audit_out, escalations_out=args.escalations_out)
     elif args.demo_low_confidence:
         print("\n=== DEMO MODE: LOW CONFIDENCE ESCALATION ===")
         print(f"Trigger: confidence < {CONFIDENCE_THRESHOLD:.2f} -> Force escalate_to_human\n")
@@ -502,24 +584,16 @@ def main():
         if not demo_batch:
             demo_batch = [BATCH[7]]
         from strategies import strategy_agent_rules
-        process_batch(demo_batch, strategy=strategy_agent_rules)
-    elif args.demo_high_value:
-        print("\n=== DEMO MODE: HIGH-VALUE MONETARY THRESHOLD ESCALATION ===")
-        print(f"Trigger: amount_paise > {HUMAN_APPROVAL_ABOVE_PAISE} (₹{HUMAN_APPROVAL_ABOVE_PAISE/100:,.2f}) -> Force escalate_to_human (guard_fired='high_value_escalation') before any model call or retry.\n")
-        from strategies import strategy_agent_rules
-        process_batch(
-            HIGH_VALUE_BATCH,
-            strategy=strategy_agent_rules,
-            write_audit_log=True,
-            append_audit_log=True,
-            verbose=True,
-        )
+        process_batch(demo_batch, strategy=strategy_agent_rules, audit_out=args.audit_out, escalations_out=args.escalations_out)
     else:
         from strategies import strategy_agent_llm, strategy_agent_rules
         strat = strategy_agent_rules if args.rules_only else (
             lambda rec: strategy_agent_llm(rec, refresh_cache=args.refresh_llm_cache)
         )
-        process_batch(BATCH, strategy=strat, n_seeds=args.seeds, write_audit_log=True)
+        process_batch(BATCH, strategy=strat, n_seeds=args.seeds, audit_out=args.audit_out, escalations_out=args.escalations_out)
+
+    if args.audit_summary:
+        print_audit_summary(args.audit_out)
 
 
 if __name__ == "__main__":

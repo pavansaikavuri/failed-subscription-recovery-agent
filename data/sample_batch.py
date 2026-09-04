@@ -583,59 +583,8 @@ BATCH = [
     },
 ]
 
-# Separate test batch for High-Value Escalation Threshold (>₹50,000)
-# Excluded from the primary benchmark batch to avoid skewing aggregate stats.
-HIGH_VALUE_BATCH = [
-    {
-        "id": "pay_Hv41aBcDeFgH10",
-        "merchant_id": "mid_razor_99",
-        "customer_id": "cust_hv01",
-        "amount_paise": 8500000,  # ₹85,000
-        "currency": "INR",
-        "failure_reason": "gateway_timeout",
-        "attempt_count": 1,
-        "last_attempt_at": now - timedelta(hours=2),
-        "subscription_id": "sub_Hv81aBcDeFgH41",
-        "payment_method": "card",
-        "customer_ltv_paise": 25500000,  # ₹2,55,000
-        "notes": "Annual enterprise SaaS platform subscription renewal",
-        "payment_state": "confirmed_failed",
-    },
-    {
-        "id": "pay_Hv42bCdEfGhI21",
-        "merchant_id": "mid_razor_99",
-        "customer_id": "cust_hv02",
-        "amount_paise": 6200000,  # ₹62,000
-        "currency": "INR",
-        "failure_reason": "insufficient_funds",
-        "attempt_count": 2,
-        "last_attempt_at": now - timedelta(hours=6),
-        "subscription_id": "sub_Hv82bCdEfGhI42",
-        "payment_method": "upi",
-        "customer_ltv_paise": 18600000,  # ₹1,86,000
-        "notes": "Annual executive leadership cohort plan auto-debit",
-        "payment_state": "confirmed_failed",
-    },
-    {
-        "id": "pay_Hv43cDeFgHiJ32",
-        "merchant_id": "mid_razor_88",
-        "customer_id": "cust_hv03",
-        "amount_paise": 12000000,  # ₹1,20,000
-        "currency": "INR",
-        "failure_reason": "mandate_not_registered",
-        "attempt_count": 1,
-        "last_attempt_at": now - timedelta(hours=1),
-        "subscription_id": "sub_Hv83cDeFgHiJ43",
-        "payment_method": "card",
-        "customer_ltv_paise": 50000000,  # ₹5,00,000
-        "notes": "Enterprise multi-seat cloud license annual renewal",
-        "payment_state": "confirmed_failed",
-    },
-]
-
 if __name__ == "__main__":
     print(f"Total rows in BATCH: {len(BATCH)}")
-    print(f"Total rows in HIGH_VALUE_BATCH: {len(HIGH_VALUE_BATCH)}")
     valid_count = 0
     invalid_count = 0
     for row in BATCH:
@@ -645,4 +594,4 @@ if __name__ == "__main__":
         except Exception as e:
             print(f"[{row.get('id')}] (Out-of-scope/Malformed record caught in test): {row.get('failure_reason')}")
             invalid_count += 1
-    print(f"\nValidated BATCH: {valid_count} valid rows, {invalid_count} out-of-scope test rows.")
+    print(f"\nValidated: {valid_count} valid rows, {invalid_count} out-of-scope test rows.")

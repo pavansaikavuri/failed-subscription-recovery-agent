@@ -69,43 +69,11 @@ reconciliation guards resolve them deterministically at zero inference
 cost. The model is consulted where failure context is genuinely
 ambiguous, not as a router for cases an `if` statement decides.
 
-## Five safety guards
-
-1. **High-value monetary threshold** — any payment exceeding ₹50,000
-   (`5,000,000 paise`) forces `escalate_to_human` for merchant sign-off
-   before any autonomous debit or retry can occur.
-2. **Retry exhaustion** — per-method caps (`upi: 3`, `card: 4`), not a
-   flat number, reflecting differing network retry limits.
-3. **Reconciliation** — `payment_state` of `unknown` or
-   `possibly_debited` forces escalation. Retrying a payment that may
-   already have debited risks a double charge; this runs *before* the
-   model.
-4. **Fail-closed** — if the model is unavailable, the fallback may never
-   emit a money-moving action. An outage cannot trigger a debit.
-5. **Low-confidence escalation** — below threshold, route to a human.
-
-## High-Value Escalation Guard (Isolated Batch)
-
-To preserve statistical validity, high-value payments (>₹50,000 / 5,000,000 paise)
-are evaluated in an isolated cohort (`HIGH_VALUE_BATCH`) via
-`python pipeline.py --demo-high-value` rather than merged into the primary benchmark.
-
-- **Statistical Rationale:** The 3 high-value records (₹85,000, ₹62,000, and ₹1,20,000)
-  carry ₹2,67,000 of exposure—representing 73% of total combined volume. Including them
-  directly in a 40-record sample causes 3 records to dominate aggregate variance and
-  distorts the empirical break-even penalty.
-- **Deterministic Action:** Under `agent_rules` and `agent_llm`, Guard 0 intercepts all
-  3 records before any model call or retry attempt, routing them directly to
-  `escalate_to_human` with reason *"High-value payment requires merchant approval."*
-  (`guard_fired="high_value_escalation"`).
-- **Audit Verification:** All 3 records are logged with full financial accounting to
-  `logs/audit_log.jsonl`.
-
 ## How it works
 
-Batch → Pydantic validation → five deterministic guards → decision
+Batch → Pydantic validation → four deterministic guards → decision
 (Gemini structured output, or rules) → independent outcome model →
-audit ledger (`logs/audit_log.jsonl`) + financial counters.
+audit ledger (`audit_log.jsonl`) + financial counters.
 
 **The outcome model cannot see the decision engine, and vice versa.**
 Recovery probability is a property of `(failure_reason, action, seed)`,
@@ -113,6 +81,18 @@ never of the action label alone. This is what makes the agent's choice
 scoreable rather than self-fulfilling — an earlier version derived
 payout from the chosen action, which meant "always retry" would have
 scored highest by construction.
+
+## Four safety guards
+
+1. **Retry exhaustion** — per-method caps (`upi: 3`, `card: 4`), not a
+   flat number, reflecting differing network retry limits.
+2. **Reconciliation** — `payment_state` of `unknown` or
+   `possibly_debited` forces escalation. Retrying a payment that may
+   already have debited risks a double charge; this runs *before* the
+   model.
+3. **Fail-closed** — if the model is unavailable, the fallback may never
+   emit a money-moving action. An outage cannot trigger a debit.
+4. **Low-confidence escalation** — below threshold, route to a human.
 
 ## The 9 India-specific failure reasons
 
@@ -129,11 +109,11 @@ not merely an ineffective action. The outcome model prices it as one.
 
 ```bash
 pip install -r requirements.txt
-python pipeline.py --benchmark              # full evaluation, no API key (40 records)
-python pipeline.py --sweep-penalty          # penalty sensitivity (Rs 912.84 break-even)
-python pipeline.py --sweep-probabilities    # probability sensitivity (dual penalty tables)
-python pipeline.py --demo-high-value        # high-value threshold escalation (>Rs 50k)
-pytest tests/                               # 7 guard + determinism tests
+python pipeline.py --rules-only             # run compliant agent with audit export
+python pipeline.py --audit-summary          # parse and summarize audit_log.jsonl
+python pipeline.py --benchmark              # full evaluation, no API key
+python pipeline.py --sweep-penalty          # sensitivity analysis
+pytest tests/                               # 6 guard + determinism tests
 python pipeline.py --demo-retry-exhaustion
 python pipeline.py --demo-out-of-scope
 python pipeline.py --demo-low-confidence
@@ -179,12 +159,11 @@ mapped `pre_debit_notice_not_acked` to `retry_now`, bundled with
 - All outcomes simulated; probabilities are stated assumptions in
   `outcome_model.py`, calibrated against published industry retry
   recovery rates, not fitted to merchant history.
-- 40 records in primary benchmark. Wide per-seed variance (₹3,175–₹46,658) —
-  comparisons use paired per-seed differences with standard errors, not raw ranges.
+- 40 records. Wide per-seed variance (₹3,175–₹46,658) — comparisons use
+  paired per-seed differences with standard errors, not raw ranges.
 - Batch, not a live webhook listener. Deliberate: measurement and safety
   first. Production step is a FastAPI receiver for `payment.failed` and
   `subscription.halted`.
 - No live dispatch to WhatsApp/SMS.
-- Audit trail written persistently to `logs/audit_log.jsonl` (19 fields).
-
-
+- Audit trail written persistently to `audit_log.jsonl` with escalations
+  exported to `escalations.json`.

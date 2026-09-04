@@ -46,8 +46,9 @@ class InterventionDecision(BaseModel):
     max_retries_left: int
     escalate: bool
     degraded_mode: bool = False
-    decision_source: Literal["llm", "rule", "guard"] = "rule"
-    guard_fired: Optional[str] = None
+    decision_source: Optional[Literal["llm", "rules", "guard"]] = None
+    guard_triggered: Optional[str] = None
+    model_version: Optional[str] = None
 
 
 class AuditEntry(BaseModel):
@@ -61,32 +62,7 @@ class AuditEntry(BaseModel):
     cost_paise: int = 0
     violation: bool = False
     penalty_paise: int = 0
-    case_id: Optional[str] = None
-    decision_source: Literal["llm", "rule", "guard"] = "rule"
-    guard_fired: Optional[str] = None
-    seed: int = 0
-    config_version: str = "1.0.0"
-
-    def to_audit_log_dict(self) -> dict:
-        return {
-            "timestamp": self.timestamp.isoformat(),
-            "case_id": self.case_id or f"case_{self.record_id}",
-            "record_id": self.record_id,
-            "failure_reason": self.failure_reason,
-            "amount_at_risk_paise": self.amount_at_risk_paise,
-            "decision_source": self.decision_source,
-            "guard_fired": self.guard_fired,
-            "chosen_action": self.decision.chosen_action,
-            "reason": self.decision.reason,
-            "confidence": self.decision.confidence,
-            "escalate": self.decision.escalate,
-            "degraded_mode": self.decision.degraded_mode,
-            "cost_paise": self.cost_paise,
-            "violation": self.violation,
-            "penalty_paise": self.penalty_paise,
-            "recovered_paise": self.recovered_paise,
-            "status": self.status,
-            "seed": self.seed,
-            "config_version": self.config_version,
-        }
-
+    model_version: str = "rules-v1"
+    policy_version: str = ""
+    decision_source: Literal["llm", "rules", "guard"] = "rules"
+    guard_triggered: Optional[str] = None

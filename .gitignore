@@ -7,5 +7,10 @@
 .venv/
 __pycache__/
 *.pyc
+logs/
 .DS_Store
 verify_test/
+
+# Sample artifacts
+!audit_log.jsonl
+!escalations.json
