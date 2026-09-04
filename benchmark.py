@@ -288,11 +288,12 @@ def run_benchmark(
     return benchmark_stats, full_output
 
 
-def derive_oracle_compliance_threshold(valid_records: List[FailedPayment]) -> float:
+def derive_oracle_compliance_threshold(valid_records: List[FailedPayment]) -> Tuple[float, float]:
     """
-    Analytically derives the exact compliance penalty threshold above which an
-    unconstrained profit-maximizing Oracle with full model knowledge stops violating.
-    Threshold = max_r (max_{a in viol} E[Net(r, a, 0)] - max_{a in comp} E[Net(r, a, 0)])
+    Analytically derives:
+    1. cheapest_threshold: the penalty above which the cheapest violation stops paying (₹62.08)
+    2. oracle_threshold: the penalty above which an unconstrained profit-maximiser stops violating entirely (₹1,351.22)
+    Thresholds = diff between best violating action EV and best compliant action EV at penalty=0.
     """
     from outcome_model import ACTION_COSTS, check_compliance_violation, get_effective_probability
     from pipeline import get_retry_cap
@@ -307,7 +308,7 @@ def derive_oracle_compliance_threshold(valid_records: List[FailedPayment]) -> fl
         "resend_pre_debit_notice",
     ]
 
-    max_threshold_paise = 0.0
+    switch_points = []
     for r in valid_records:
         retry_cap = get_retry_cap(r.payment_method)
         best_viol_ev = -float("inf")
@@ -324,17 +325,18 @@ def derive_oracle_compliance_threshold(valid_records: List[FailedPayment]) -> fl
                 if ev_zero > best_comp_ev:
                     best_comp_ev = ev_zero
         if best_viol_ev > best_comp_ev:
-            diff = best_viol_ev - best_comp_ev
-            if diff > max_threshold_paise:
-                max_threshold_paise = diff
+            diff = (best_viol_ev - best_comp_ev) / 100.0
+            switch_points.append(diff)
 
-    return max_threshold_paise / 100.0
+    cheapest_threshold = min(switch_points) if switch_points else 0.0
+    oracle_threshold = max(switch_points) if switch_points else 0.0
+    return cheapest_threshold, oracle_threshold
 
 
 def run_penalty_sweep(
     batch: List[dict] = BATCH,
     n_seeds: int = 200,
-    penalties_inr: List[int] = [0, 250, 500, 913, 1500, 3000, 5000],
+    penalties_inr: List[int] = [0, 250, 500, 889, 1500, 3000, 5000],
     save_to_file: bool = True,
     verbose: bool = True,
     return_details: bool = False,
@@ -342,7 +344,7 @@ def run_penalty_sweep(
     """
     Evaluates all 7 strategies across varying regulatory violation penalty levels
     and dynamically derives the break-even penalty where agent_rules overtakes naive_rules,
-    as well as the Oracle compliance threshold.
+    as well as the full three-threshold compliance pricing curve.
     """
     if verbose:
         print(f"\n==================================================================")
@@ -388,11 +390,12 @@ def run_penalty_sweep(
         for r in batch
         if (r.get("failure_reason") if isinstance(r, dict) else r.failure_reason) in VALID_FAILURE_REASONS
     ]
-    oracle_threshold_inr = derive_oracle_compliance_threshold(valid_records)
+    cheapest_threshold_inr, oracle_threshold_inr = derive_oracle_compliance_threshold(valid_records)
 
     if verbose:
         print(f"Exact Break-Even Penalty: ₹{breakeven_penalty_inr:,.2f}")
         print(f"(At penalties >= ₹{breakeven_penalty_inr:,.2f}, agent_rules outperforms naive_rules net of compliance risk)")
+        print(f"Cheapest Violation Threshold: ₹{cheapest_threshold_inr:,.2f}")
         print(f"Oracle Compliance Threshold: ₹{oracle_threshold_inr:,.2f}")
         print(f"(The penalty above which an unconstrained profit-maximiser with full knowledge of the outcome model stops violating)\n")
 
@@ -401,9 +404,11 @@ def run_penalty_sweep(
     header_cols = ["Penalty (₹)"] + [f"**{name}**" for name in strategy_names] + ["Best Deployable Strategy"]
     sweep_lines = [
         "## Compliance Penalty Sensitivity\n",
-        f"- **Exact Break-Even Penalty:** ₹{breakeven_penalty_inr:,.2f} per violation (agent_rules overtakes naive_rules)",
-        f"- **Oracle Compliance Threshold:** ₹{oracle_threshold_inr:,.2f} per violation (the penalty above which an unconstrained profit-maximiser with full knowledge of the outcome model stops violating)\n",
-        f"*Note on Oracle compliance threshold: On this 40-record batch the threshold of ₹{oracle_threshold_inr:,.2f} is driven by a single record (pay_Ex11kLmNoPqR10, Rs 9,999, gateway_timeout at the retry cap), so it is batch-specific, not a general constant.*\n",
+        "### The Compliance Pricing Curve\n",
+        f"- **₹{cheapest_threshold_inr:,.2f}** — The cheapest violation stops paying (`pay_Ex66fGhIjKlM65`, ₹899, insufficient_funds). Below this, no violation is deterred.",
+        f"- **₹{breakeven_penalty_inr:,.2f}** — The compliant agent (`agent_rules`) overtakes the non-compliant rulebook (`naive_rules`). Efficiency shrinks the performance gap so the crossing arrives earlier.",
+        f"- **₹{oracle_threshold_inr:,.2f}** — An unconstrained profit-maximiser abandons violation entirely (`pay_Ex11kLmNoPqR10`, ₹9,999, gateway_timeout at retry cap). Above this, nothing pays.\n",
+        "*Note: All three thresholds are derived programmatically from this 40-record batch and are batch-specific, not general constants.*\n",
         "| " + " | ".join(header_cols) + " |",
         "| " + " | ".join([":---:"] * len(header_cols)) + " |",
     ]

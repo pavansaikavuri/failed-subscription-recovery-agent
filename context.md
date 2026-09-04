@@ -15,13 +15,14 @@ Failed Subscription Recovery Agent evaluating 40 realistic Indian recurring paym
 ## Benchmark Summary (40 Records, 200 Paired Seeds, ₹98,952 at Risk)
 - **oracle**: Mean Net ₹27,509.45 | 29.6% Gross | Reference Upper Bound (Reads outcome matrix)
 - **naive_rules**: Mean Net ₹24,154.31 | 28.7% Gross | 6 Violations (₹3,000 penalty at ₹500/violation)
-- **agent_rules**: Mean Net ₹21,677.28 | 23.3% Gross | 0 Violations (100% compliant)
-- **agent_llm**: Mean Net ₹21,259.24 | 21.8% Gross | 0 Violations (Paired diff vs agent_rules: -₹418.05 ± ₹587.10)
+- **agent_rules**: Mean Net ₹21,822.29 | 23.1% Gross | 0 Violations (100% compliant)
+- **agent_llm**: Mean Net ₹21,537.24 | 22.2% Gross | 0 Violations (Paired diff vs agent_rules: -₹285.05 ± ₹570.06)
 - **message_only**: Mean Net ₹16,993.97 | 17.2% Gross | 0 Violations
 - **always_retry**: Mean Net ₹5,016.53 | 13.2% Gross | 16 Violations
 - **no_action**: Mean Net ₹0.00 | 0.0% Gross | 0 Violations
 
-## Compliance Break-Even Derivation
-- Exact derived break-even penalty: **₹912.84 per violation**.
-- Below ₹912.84, `naive_rules` nets higher due to ignoring regulatory constraints.
-- At or above ₹912.84, `agent_rules` dominates as compliance penalties wipe out non-compliant gains.
+## The Compliance Pricing Curve
+- **₹62.08 per violation**: The cheapest violation stops paying (`pay_Ex66fGhIjKlM65`, ₹899, insufficient_funds). Below ₹62, no violation is deterred.
+- **₹888.67 per violation**: Exact derived break-even penalty where `agent_rules` overtakes `naive_rules`. `naive_rules` is unchanged at ₹24,154.31; `agent_rules` rose by ₹145.01 via the EV gate, shrinking the performance gap so the crossing arrives earlier.
+- **₹1,351.22 per violation**: Oracle compliance threshold where an unconstrained profit-maximiser abandons violations entirely (`pay_Ex11kLmNoPqR10`, ₹9,999, gateway_timeout at retry cap). Above ₹1,351, nothing pays.
+*(All three thresholds derived programmatically from the 40-record batch and are batch-specific).*

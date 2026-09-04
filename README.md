@@ -24,28 +24,46 @@ band reported for basic retry rules in industry sources.
 
 The non-compliant legacy rulebook (`naive_rules`) recovers **more** money
 than the compliant agent when an RBI violation is priced at ₹500 —
-₹24,154 versus ₹21,677 — because it pays 6 violations and still comes out
+₹24,154 versus ₹21,822 — because it pays 6 violations and still comes out
 ahead.
 
-The exact break-even is **₹912.84 per violation.** Below that price,
+The exact break-even is **₹888.67 per violation.** Below that price,
 non-compliance is economically rational. At or above it, the agent wins.
+`naive_rules` is unchanged at ₹24,154.31; `agent_rules` rose from ₹21,677.28
+to ₹21,822.29 after eliminating money-losing micro-ticket escalations, shrinking
+the gross margin gap from ₹5,477.03 to ₹5,332.02. Divided across 6 regulatory
+violations, the crossing arrives earlier. Operational efficiency is the mechanism;
+the shrinking gap is the cause.
 
 | Penalty | Best deployable strategy |
 |---|---|
 | ₹0 – ₹500 | naive_rules |
-| ₹913+ | **agent_rules** |
+| ₹889+ | **agent_rules** |
+
+### The compliance pricing curve
+
+Across the 40-record evaluation batch, three distinct regulatory penalty thresholds emerge programmatically:
+
+1. **₹62.08 per violation** — *The cheapest violation stops paying.*
+   Below ₹62.08, no non-compliant retry is deterred; every unlawful retry yields higher net expected margin than its best compliant alternative. At ₹62.08, `pay_Ex66fGhIjKlM65` (₹899, `insufficient_funds`) ceases to be profitable to retry unlawfully and switches to compliant notice reissuance.
+2. **₹888.67 per violation** — *The compliant agent overtakes the non-compliant rulebook.*
+   At ₹888.67, `agent_rules` (₹21,822.29) overtakes `naive_rules`. Between ₹889 and ₹1,351, compliance is the superior system-wide policy while individual high-value violations remain locally profitable.
+3. **₹1,351.22 per violation** — *An unconstrained profit-maximiser abandons violation entirely.*
+   Above ₹1,351.22, even an omniscient profit-maximising Oracle with full model knowledge incurs 0 violations. Driven by the highest-ticket violation in the batch (`pay_Ex11kLmNoPqR10`, ₹9,999, `gateway_timeout` at retry cap), beyond this penalty nothing pays.
+
+State plainly: below ₹62 no violation is deterred; between ₹889 and ₹1,351 compliance is the better policy while individual high-value violations remain individually profitable; above ₹1,351 nothing pays. Note that all three thresholds are derived programmatically from this 40-record batch and are batch-specific, not general constants.
 
 Two consequences worth stating plainly:
 
 1. **The compliant strategies are penalty-invariant.** `agent_rules`
-   returns ₹21,677.28 whether a violation costs ₹0 or ₹5,000, because it
+   returns ₹21,822.29 whether a violation costs ₹0 or ₹5,000, because it
    never incurs one. Regulatory risk exposure is zero, not small.
 2. **Always-retry is value-destroying, not merely weak.** It falls from
    ₹13,017 to **negative ₹66,983** across the same range — destroying
    two-thirds of the merchant's book on a ₹98,952 exposure.
 
 I do not claim ₹500 is the right price. I claim that a merchant must
-decide what an unauthorised debit attempt costs them, and that ₹913 is
+decide what an unauthorised debit attempt costs them, and that ₹889 is
 where that decision flips.
 
 ## Full benchmark — 7 strategies, 200 paired seeds
@@ -58,11 +76,11 @@ See `benchmark_results.md`. Reproduce with `python pipeline.py --benchmark`
 `agent_llm` composition: 31 live Gemini decisions / 0 cache misses /
 7 resolved by deterministic guard before any model call.
 
-Paired difference versus `agent_rules`: **-₹418.05 ± ₹587.10** across 200 seeds.
+Paired difference versus `agent_rules`: **-₹285.05 ± ₹570.06** across 200 seeds.
 
-The difference (-₹418.05) is smaller than its own standard error (± ₹587.10) across 200 paired seeds.
+The difference (-₹285.05) is smaller than its own standard error (± ₹570.06) across 200 paired seeds.
 
-The LLM substitutes messaging for retrying: 4 retries versus the rule engine's 8, but 25 customer contacts versus 14. It trades debit attempts for customer friction and nets out flat. Oracle decision match is 68.4% for rules versus 57.9% for the LLM — the deterministic engine is closer to optimal, not merely cheaper.
+The LLM substitutes messaging for retrying: 4 retries versus the rule engine's 8, but 24 customer contacts versus 16. It trades debit attempts for customer friction and nets out flat. Oracle decision match is 73.7% for rules versus 60.5% for the LLM — the deterministic engine is closer to optimal, not merely cheaper.
 
 22% of records never reach the model at all: retry-exhaustion and
 reconciliation guards resolve them deterministically at zero inference

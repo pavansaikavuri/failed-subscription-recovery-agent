@@ -430,7 +430,7 @@ def generate_benchmark_html(
     # Table rows for sensitivity
     sensitivity_rows = []
     for p in penalties_inr:
-        is_breakeven = (p == 913 or abs(p - breakeven_penalty_inr) < 1.0)
+        is_breakeven = (p == 889 or abs(p - breakeven_penalty_inr) < 1.0)
         row_cls = 'class="highlight-row"' if is_breakeven else ""
 
         # Find best deployable strategy for this penalty level
@@ -947,6 +947,45 @@ def generate_benchmark_html(
             <p class="footnote">
                 *Note on Best Deployable Strategy: Oracle represents the theoretical upper bound reading the hidden recovery matrix directly and is excluded from deployable selections.<br>
                 *Note on Oracle compliance threshold: On this 40-record batch the threshold of ₹{oracle_threshold_inr:,.2f} is driven by a single record (pay_Ex11kLmNoPqR10, Rs 9,999, gateway_timeout at the retry cap), so it is batch-specific, not a general constant.
+            </p>
+        </section>
+
+        <!-- The Compliance Pricing Curve -->
+        <section class="report-section">
+            <h2 class="section-title">The Compliance Pricing Curve</h2>
+            <p class="section-desc">
+                Three programmatically derived penalty thresholds establish the economic boundaries of autonomous subscription recovery on this batch:
+            </p>
+            <div class="table-responsive">
+                <table>
+                    <thead>
+                        <tr>
+                            <th style="width: 140px;">Penalty Threshold</th>
+                            <th style="width: 240px;">Economic Event</th>
+                            <th>Market & Behavioral Meaning</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td class="font-bold text-slate-900 num-cell">₹62.08</td>
+                            <td><strong>Cheapest violation stops paying</strong></td>
+                            <td class="text-slate-700">Below ₹62.08, no violation is deterred; every unlawful retry yields higher net expected margin than its best compliant alternative. At ₹62.08, <code>pay_Ex66fGhIjKlM65</code> (₹899, insufficient funds) ceases to be profitable to retry unlawfully and switches to compliant notice reissuance.</td>
+                        </tr>
+                        <tr class="highlight-row">
+                            <td class="font-bold text-slate-900 num-cell">₹{breakeven_penalty_inr:,.2f}</td>
+                            <td><strong>Compliant agent overtakes naive rulebook</strong></td>
+                            <td class="text-slate-700">At ₹{breakeven_penalty_inr:,.2f}, <code>agent_rules</code> strictly overtakes <code>naive_rules</code> net of compliance risk. <code>naive_rules</code> is unchanged; <code>agent_rules</code> rose by the EV gate, shrinking the gross performance gap so the crossing arrives earlier. Between ₹{breakeven_penalty_inr:,.2f} and ₹{oracle_threshold_inr:,.2f}, compliance is the superior system-wide policy while individual high-value violations remain locally profitable.</td>
+                        </tr>
+                        <tr>
+                            <td class="font-bold text-slate-900 num-cell">₹{oracle_threshold_inr:,.2f}</td>
+                            <td><strong>Profit-maximiser abandons violations entirely</strong></td>
+                            <td class="text-slate-700">Above ₹{oracle_threshold_inr:,.2f}, an unconstrained profit-maximising Oracle with full model knowledge eliminates all violations (drops to 0). Driven by <code>pay_Ex11kLmNoPqR10</code> (₹9,999, gateway timeout at retry cap). Above this price, nothing pays.</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+            <p class="footnote">
+                *Note: All three thresholds are derived programmatically from this 40-record batch and are batch-specific economic properties of the invoice distribution, not general constants.
             </p>
         </section>
 
