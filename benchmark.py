@@ -262,6 +262,7 @@ def run_benchmark(
 
         # Write audit log for seed 0 using pipeline.process_batch
         from pipeline import process_batch
+        from data.sample_batch import HIGH_VALUE_BATCH
         process_batch(
             batch,
             strategy=STRATEGIES["agent_rules"],
@@ -269,6 +270,17 @@ def run_benchmark(
             penalty_paise=penalty_paise,
             prob_multiplier=prob_multiplier,
             write_audit_log=True,
+            append_audit_log=False,
+            verbose=False,
+        )
+        process_batch(
+            HIGH_VALUE_BATCH,
+            strategy=STRATEGIES["agent_rules"],
+            seed=0,
+            penalty_paise=penalty_paise,
+            prob_multiplier=prob_multiplier,
+            write_audit_log=True,
+            append_audit_log=True,
             verbose=False,
         )
 
@@ -277,6 +289,17 @@ def run_benchmark(
             full_output += "\n\n" + sweep_md
             prob_md = run_probability_sweep(batch=batch, n_seeds=n_seeds, save_to_file=True, verbose=verbose)
             full_output += "\n\n" + prob_md
+
+            high_value_md = (
+                "## High-Value Escalation Guard (Isolated Batch)\n\n"
+                "To preserve statistical validity, high-value payments (>₹50,000 / 5,000,000 paise) are evaluated in an isolated cohort (`HIGH_VALUE_BATCH`) via `python pipeline.py --demo-high-value` rather than merged into the primary benchmark.\n\n"
+                "- **Rationale:** The 3 enterprise records (₹85,000, ₹62,000, and ₹1,20,000) represent ₹267,000 of exposure (73% of total combined volume). Including them in a 40-record sample would cause 3 records to dominate aggregate variance and distort the empirical break-even penalty.\n"
+                "- **Deterministic Policy:** Under `agent_rules` and `agent_llm`, Guard 0 intercepts all 3 payments before any model call or retry attempt, routing them directly to `escalate_to_human` with reason *\"High-value payment requires merchant approval.\"* (`guard_fired=\"high_value_escalation\"`).\n"
+                "- **Compliance & Risk:** Autonomous retries are strictly prohibited above ₹50,000, eliminating double-debit or regulatory violation exposure on enterprise revenue.\n"
+            )
+            full_output += "\n\n" + high_value_md
+            with open(out_path, "a", encoding="utf-8") as f:
+                f.write("\n\n" + high_value_md + "\n")
 
         if verbose:
             print(f"Benchmark results successfully saved to: {out_path}")

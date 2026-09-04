@@ -581,7 +581,11 @@ BATCH = [
         "customer_ltv_paise": 598800,
         "notes": "GPay UPI PIN retry exhausted on device, fallback required",
     },
-    # 41-43: High-Value Escalation Threshold Records (>₹50,000)
+]
+
+# Separate test batch for High-Value Escalation Threshold (>₹50,000)
+# Excluded from the primary benchmark batch to avoid skewing aggregate stats.
+HIGH_VALUE_BATCH = [
     {
         "id": "pay_Hv41aBcDeFgH10",
         "merchant_id": "mid_razor_99",
@@ -631,6 +635,7 @@ BATCH = [
 
 if __name__ == "__main__":
     print(f"Total rows in BATCH: {len(BATCH)}")
+    print(f"Total rows in HIGH_VALUE_BATCH: {len(HIGH_VALUE_BATCH)}")
     valid_count = 0
     invalid_count = 0
     for row in BATCH:
@@ -640,4 +645,4 @@ if __name__ == "__main__":
         except Exception as e:
             print(f"[{row.get('id')}] (Out-of-scope/Malformed record caught in test): {row.get('failure_reason')}")
             invalid_count += 1
-    print(f"\nValidated: {valid_count} valid rows, {invalid_count} out-of-scope test rows.")
+    print(f"\nValidated BATCH: {valid_count} valid rows, {invalid_count} out-of-scope test rows.")

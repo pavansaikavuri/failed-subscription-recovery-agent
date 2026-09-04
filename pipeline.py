@@ -28,7 +28,7 @@ from outcome_model import (
     get_effective_probability,
     VIOLATION_PENALTY_PAISE,
 )
-from data.sample_batch import BATCH
+from data.sample_batch import BATCH, HIGH_VALUE_BATCH
 
 load_dotenv()
 
@@ -100,12 +100,17 @@ def get_retry_cap(payment_method: str) -> int:
     return RETRY_CAPS.get(payment_method.lower(), RETRY_CAPS.get("default", 3))
 
 
-def write_audit_log_jsonl(entries: List[AuditEntry], file_path: Optional[Path] = None) -> None:
+def write_audit_log_jsonl(
+    entries: List[AuditEntry],
+    file_path: Optional[Path] = None,
+    append: bool = False,
+) -> None:
     """Writes audit entries to logs/audit_log.jsonl with exactly required fields."""
     if file_path is None:
         file_path = Path(__file__).parent / "logs" / "audit_log.jsonl"
     file_path.parent.mkdir(parents=True, exist_ok=True)
-    with open(file_path, "w", encoding="utf-8") as f:
+    mode = "a" if append else "w"
+    with open(file_path, mode, encoding="utf-8") as f:
         for entry in entries:
             f.write(json.dumps(entry.to_audit_log_dict()) + "\n")
 
@@ -118,6 +123,7 @@ def process_batch(
     penalty_paise: int = VIOLATION_PENALTY_PAISE,
     prob_multiplier: float = 1.0,
     write_audit_log: bool = False,
+    append_audit_log: bool = False,
     verbose: bool = True,
     clear_ledger: bool = True,
 ) -> BatchResult:
@@ -322,12 +328,13 @@ def process_batch(
         if verbose:
             recovery_str = f" [RECOVERED ₹{outcome.recovered_paise/100:,.2f}]" if outcome.recovered_paise > 0 else ""
             violation_str = " [COMPLIANCE VIOLATION]" if outcome.violation else ""
+            guard_str = f" [GUARD: {decision.guard_fired}]" if decision.guard_fired else ""
             print(
-                f"[{payment.id}] {payment.failure_reason} → {action} (conf={decision.confidence:.2f}){recovery_str}{violation_str}"
+                f"[{payment.id}] {payment.failure_reason} (₹{payment.amount_paise/100:,.2f}) → {action} (conf={decision.confidence:.2f}){guard_str}{recovery_str}{violation_str}"
             )
 
     if write_audit_log and seed == 0:
-        write_audit_log_jsonl(audit_log)
+        write_audit_log_jsonl(audit_log, append=append_audit_log)
 
     net_recovered_paise = total_gross_recovered_paise - total_cost_paise - total_penalty_paise
     recovery_rate_pct = (total_gross_recovered_paise / total_at_risk_paise * 100) if total_at_risk_paise > 0 else 0.0
@@ -423,6 +430,11 @@ def main():
         help=f"Demo low-confidence escalation override (confidence < {CONFIDENCE_THRESHOLD:.2f})",
     )
     parser.add_argument(
+        "--demo-high-value",
+        action="store_true",
+        help="Demo high-value monetary threshold escalation guard (> ₹50,000)",
+    )
+    parser.add_argument(
         "--seeds",
         type=int,
         default=1,
@@ -491,6 +503,17 @@ def main():
             demo_batch = [BATCH[7]]
         from strategies import strategy_agent_rules
         process_batch(demo_batch, strategy=strategy_agent_rules)
+    elif args.demo_high_value:
+        print("\n=== DEMO MODE: HIGH-VALUE MONETARY THRESHOLD ESCALATION ===")
+        print(f"Trigger: amount_paise > {HUMAN_APPROVAL_ABOVE_PAISE} (₹{HUMAN_APPROVAL_ABOVE_PAISE/100:,.2f}) -> Force escalate_to_human (guard_fired='high_value_escalation') before any model call or retry.\n")
+        from strategies import strategy_agent_rules
+        process_batch(
+            HIGH_VALUE_BATCH,
+            strategy=strategy_agent_rules,
+            write_audit_log=True,
+            append_audit_log=True,
+            verbose=True,
+        )
     else:
         from strategies import strategy_agent_llm, strategy_agent_rules
         strat = strategy_agent_rules if args.rules_only else (
