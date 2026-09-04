@@ -23,7 +23,7 @@ app = FastAPI(
 )
 
 DB_PATH = Path(__file__).parent / "webhook_events.db"
-AUDIT_LOG_PATH = Path(__file__).parent / "audit_log.jsonl"
+AUDIT_LOG_PATH = Path(os.getenv("WEBHOOK_AUDIT_OUT", Path(__file__).parent / "audit_log_webhook.jsonl"))
 REPORT_PATH = Path(__file__).parent / "benchmark_report.html"
 
 

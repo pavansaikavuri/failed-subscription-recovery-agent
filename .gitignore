@@ -8,6 +8,8 @@
 __pycache__/
 *.pyc
 *.db
+webhook_events.db
+audit_log_webhook.jsonl
 logs/
 .DS_Store
 verify_test/

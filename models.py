@@ -49,6 +49,7 @@ class InterventionDecision(BaseModel):
     decision_source: Optional[Literal["llm", "rules", "guard"]] = None
     guard_triggered: Optional[str] = None
     model_version: Optional[str] = None
+    injection_flagged: bool = False
 
 
 class AuditEntry(BaseModel):
@@ -66,3 +67,4 @@ class AuditEntry(BaseModel):
     policy_version: str = ""
     decision_source: Literal["llm", "rules", "guard"] = "rules"
     guard_triggered: Optional[str] = None
+    cycle_number: int = 1

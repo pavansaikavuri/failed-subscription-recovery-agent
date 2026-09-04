@@ -82,17 +82,30 @@ scoreable rather than self-fulfilling — an earlier version derived
 payout from the chosen action, which meant "always retry" would have
 scored highest by construction.
 
-## Four safety guards
+## Five deterministic safety guards
 
-1. **Retry exhaustion** — per-method caps (`upi: 3`, `card: 4`), not a
-   flat number, reflecting differing network retry limits.
-2. **Reconciliation** — `payment_state` of `unknown` or
+1. **Reconciliation** — `payment_state` of `unknown` or
    `possibly_debited` forces escalation. Retrying a payment that may
-   already have debited risks a double charge; this runs *before* the
-   model.
-3. **Fail-closed** — if the model is unavailable, the fallback may never
-   emit a money-moving action. An outage cannot trigger a debit.
-4. **Low-confidence escalation** — below threshold, route to a human.
+   already have debited risks a double charge; this runs *before* the model.
+2. **Retry exhaustion** — per-method caps (`upi: 3`, `card: 4`), not a
+   flat number, reflecting differing network retry limits.
+3. **Prompt injection defence (Guard 5)** — untrusted merchant notes
+   are sanitized against direct instruction overrides and base64 payloads;
+   flagged records are withheld and routed to human review.
+4. **Hard declines & Fail-closed** — hard declines (`issuer_declined`,
+   `mandate_lapsed_on_reissue`) escalate immediately; an outage or degraded
+   mode never emits an autonomous money-moving debit.
+5. **Low-confidence escalation** — below threshold, route to a human.
+
+## Closed-Loop Recovery Campaign (ReAct Lifecycle)
+
+The agent doesn't stop at single-pass classification. Under `--campaign`,
+unrecovered non-terminal records re-enter subsequent retry windows
+(Cycle 1 → Cycle 4):
+- `attempt_count` increments with real attempt decay.
+- Cycle audit notes accumulate: `[Cycle X: tried <action>, unrecovered]`.
+- As attempts approach retry caps, the policy dynamically shifts away from
+  `retry_now` toward customer communications, human review, or writeoff.
 
 ## The 9 India-specific failure reasons
 
@@ -111,9 +124,11 @@ not merely an ineffective action. The outcome model prices it as one.
 pip install -r requirements.txt
 python pipeline.py --rules-only             # run compliant agent with audit export
 python pipeline.py --audit-summary          # parse and summarize audit_log.jsonl
-python pipeline.py --benchmark              # full evaluation, no API key
+python pipeline.py --campaign               # closed-loop multi-cycle recovery lifecycle
+python pipeline.py --demo-injection         # Guard 5 prompt injection defence demo
+python pipeline.py --benchmark              # full evaluation, no API key (HTML + MD)
 python pipeline.py --sweep-penalty          # sensitivity analysis
-pytest tests/                               # 6 guard + determinism tests
+pytest tests/                               # 26 tests across guards, campaign, outcome model, webhook
 python pipeline.py --demo-retry-exhaustion
 python pipeline.py --demo-out-of-scope
 python pipeline.py --demo-low-confidence

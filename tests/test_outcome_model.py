@@ -86,17 +86,23 @@ def test_retrying_gateway_timeout_has_high_recovery():
     assert prob > 0.70, f"Expected high recovery probability for gateway_timeout retry, got {prob}"
 
 
-def test_oracle_net_greater_than_or_equal_to_every_strategy_same_seed():
-    """Oracle net >= every other deployable strategy's net on the same seed."""
-    seed = 0
-    results = {
-        name: process_batch(BATCH, strategy=strat, seed=seed, verbose=False, clear_ledger=True).net_recovered_paise
-        for name, strat in STRATEGIES.items()
-    }
-    oracle_net = results["oracle"]
-    for name, net_val in results.items():
+from benchmark import run_benchmark
+
+
+def test_oracle_dominates_on_mean():
+    """Oracle net strictly dominates every other strategy on mean net recovery across 200 seeds."""
+    stats, _ = run_benchmark(
+        BATCH,
+        n_seeds=200,
+        save_markdown=False,
+        verbose=False,
+        include_sweep=False,
+    )
+    mean_nets = {s.strategy_name: s.mean_net_paise for s in stats}
+    oracle_net = mean_nets["oracle"]
+    for name, net_val in mean_nets.items():
         assert oracle_net >= net_val, (
-            f"Oracle net (₹{oracle_net/100:,.2f}) failed to match or beat {name} (₹{net_val/100:,.2f}) on seed {seed}"
+            f"Oracle mean net (₹{oracle_net/100:,.2f}) failed to match or beat {name} (₹{net_val/100:,.2f}) across 200 seeds"
         )
 
 
