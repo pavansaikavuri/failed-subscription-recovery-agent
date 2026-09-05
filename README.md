@@ -25,7 +25,7 @@ flowchart TD
     A["Batch: 40 records"] --> C
     B["Webhook: HMAC + SQLite idempotency<br/>+ 14-day dunning state"] --> C
 
-    C{"classify_and_decide<br/><b>SHARED ENGINE</b>"} --> D["5 Deterministic Safety Guards<br/>1. Reconciliation (block unknown/possibly_debited)<br/>2. Per-method retry caps (UPI: 3 | Card: 4)<br/>3. Prompt injection defence (sanitize notes)<br/>4. Hard declines & fail-closed (non-retryable)<br/>5. Low-confidence EV gate on human escalation"]
+    C{"classify_and_decide<br/><b>SHARED ENGINE</b>"} --> D["5 Deterministic Safety Guards<br/>1. Reconciliation (block unknown/possibly_debited)<br/>2. Per-method retry caps (UPI: 3 | Card: 4)<br/>3. Prompt injection defence (sanitize notes)<br/>4. Hard declines and fail-closed (non-retryable)<br/>5. Low-confidence EV gate on human escalation"]
 
     D -->|"Resolved without model: 9 of 40"| G["Bounded Policy Action<br/>retry · notice · nudge · reissue · escalate · writeoff"]
     D -->|"Ambiguous context"| E["Gemini Flash LLM<br/><i>(Cached, 100% replayable)</i>"]
@@ -33,7 +33,7 @@ flowchart TD
 
     G --> H["Outcome Simulation Model<br/><b>CANNOT see decision engine</b><br/>P = f(failure_reason, action, seed)<br/>Deterministic SHA-256 draws"]
 
-    H --> I[("Immutable Audit Ledger & Outputs<br/>audit_log.jsonl · escalations.json · benchmark_report.html")]
+    H --> I[("Immutable Audit Ledger and Outputs<br/>audit_log.jsonl · escalations.json · benchmark_report.html")]
 ```
 
 ![The compliance pricing curve](docs/benchmark_report.png)
