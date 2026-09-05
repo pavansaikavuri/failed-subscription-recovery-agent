@@ -6,44 +6,19 @@ Failed Subscription Recovery Agent evaluating 40 realistic Indian recurring paym
 ## System Architecture
 
 ```mermaid
-flowchart LR
-    subgraph INGEST ["1. Ingestion Layer"]
-        direction TB
-        A["<b>Batch Evaluation</b><br/>40 Indian recurring failures"]
-        B["<b>FastAPI Webhooks</b><br/>HMAC-SHA256 verification<br/>14-day SQLite dunning ledger"]
-    end
+flowchart TD
+    A["Batch: 40 records"] --> C
+    B["Webhook: HMAC + SQLite idempotency<br/>+ 14-day dunning state"] --> C
 
-    subgraph ENGINE ["2. Decision Engine (SHARED ENGINE)"]
-        direction TB
-        CORE{"classify_and_decide<br/><b>SHARED ENGINE</b>"}
-        GUARDS["<b>5 Deterministic Guards</b><br/>1. Reconciliation (block unknown)<br/>2. Per-method retry caps (UPI 3 / Card 4)<br/>3. Prompt injection sanitization<br/>4. Hard declines & fail-closed<br/>5. Low-confidence EV gate"]
-        LLM["<b>Gemini Flash LLM</b><br/>Structured JSON output<br/><i>(Cached, 100% replayable)</i>"]
-        
-        CORE --> GUARDS
-        GUARDS -->|"Resolved deterministically (9 of 40)"| ACT
-        GUARDS -->|"Ambiguous context"| LLM
-        LLM --> ACT
-    end
+    C{"classify_and_decide<br/><b>SHARED ENGINE</b>"} --> D["5 Deterministic Safety Guards<br/>1. Reconciliation (block unknown/possibly_debited)<br/>2. Per-method retry caps (UPI: 3 | Card: 4)<br/>3. Prompt injection defence (sanitize notes)<br/>4. Hard declines & fail-closed (non-retryable)<br/>5. Low-confidence EV gate on human escalation"]
 
-    subgraph OUTCOME ["3. Execution & Simulation"]
-        direction TB
-        ACT["<b>Bounded Policy Action</b><br/>retry · notice · nudge · reissue · escalate · writeoff"]
-        MODEL["<b>Outcome Simulation Model</b><br/><b>CANNOT see decision engine</b><br/>P = f(failure_reason, action, seed)<br/>Cryptographic SHA-256 draws"]
-        ACT --> MODEL
-    end
+    D -->|"Resolved without model: 9 of 40"| G["Bounded Policy Action<br/>retry · notice · nudge · reissue · escalate · writeoff"]
+    D -->|"Ambiguous context"| E["Gemini Flash LLM<br/><i>(Cached, 100% replayable)</i>"]
+    E --> G
 
-    subgraph LEDGER ["4. Audit Ledger & Outputs"]
-        direction TB
-        AUDIT[("audit_log.jsonl<br/>Immutable JSONL log")]
-        ESC[("escalations.json<br/>Positive-EV queue")]
-        BENCH["benchmark_report.html<br/>The Pricing Curve"]
-        MODEL --> AUDIT
-        MODEL --> ESC
-        MODEL --> BENCH
-    end
+    G --> H["Outcome Simulation Model<br/><b>CANNOT see decision engine</b><br/>P = f(failure_reason, action, seed)<br/>Deterministic SHA-256 draws"]
 
-    A --> CORE
-    B --> CORE
+    H --> I[("Immutable Audit Ledger & Outputs<br/>audit_log.jsonl · escalations.json · benchmark_report.html")]
 ```
 
 ## Core Modules
