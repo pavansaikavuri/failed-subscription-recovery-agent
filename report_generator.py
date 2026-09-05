@@ -136,8 +136,8 @@ def build_sensitivity_curve_svg(
     )
 
     # Draw strategy polylines
-    # Order so high priority lines are on top
-    strategy_order = ["no_action", "always_retry", "message_only", "naive_rules", "agent_llm", "agent_rules", "oracle"]
+    # Order so agent_rules is drawn first, agent_llm drawn distinctly on top, and oracle on top
+    strategy_order = ["no_action", "always_retry", "message_only", "naive_rules", "agent_rules", "agent_llm", "oracle"]
     end_labels = []
 
     for strat in strategy_order:
@@ -155,11 +155,11 @@ def build_sensitivity_curve_svg(
             dash = 'stroke-dasharray="2,3"'
             width_val = "2.5"
         elif strat == "agent_rules":
-            width_val = "3.5"
+            width_val = "3.2"
             dash = ""
         elif strat == "agent_llm":
-            width_val = "2.5"
-            dash = 'stroke-dasharray="8,4"'
+            width_val = "2.2"
+            dash = 'stroke-dasharray="4,3"'
         elif strat == "naive_rules":
             width_val = "2.2"
             dash = 'stroke-dasharray="6,3"'
@@ -178,24 +178,30 @@ def build_sensitivity_curve_svg(
             f'{dash} stroke-linecap="round" stroke-linejoin="round" />'
         )
 
-        # Plot point dots
+        # Plot point dots (agent_llm radius slightly smaller so both paired markers show cleanly)
+        dot_r = "2.5" if strat == "agent_llm" else "3.5"
         for x, y, _ in pts:
-            svg_parts.append(f'<circle cx="{x:.1f}" cy="{y:.1f}" r="3.5" fill="{color}" stroke="#ffffff" stroke-width="1.5" />')
+            svg_parts.append(f'<circle cx="{x:.1f}" cy="{y:.1f}" r="{dot_r}" fill="{color}" stroke="#ffffff" stroke-width="1.5" />')
 
         last_x, last_y, last_val = pts[-1]
         end_labels.append({"strat": strat, "x": last_x, "y": last_y, "val": last_val, "color": color})
 
-    # Deconflict end label y positions so they never overlap
+    # Anchored deconfliction: keep each label anchored to its own series' final y-value
+    # Symmetrically relax close neighbours so agent_llm sits directly below agent_rules without shifting message_only
     end_labels.sort(key=lambda item: item["y"])
-    min_gap = 18
-    for k in range(1, len(end_labels)):
-        if end_labels[k]["y"] - end_labels[k-1]["y"] < min_gap:
-            end_labels[k]["y"] = end_labels[k-1]["y"] + min_gap
+    min_gap = 12.5
+    for _ in range(50):
+        for k in range(len(end_labels) - 1):
+            gap = end_labels[k+1]["y"] - end_labels[k]["y"]
+            if gap < min_gap:
+                overlap = (min_gap - gap) / 2.0
+                end_labels[k]["y"] -= overlap
+                end_labels[k+1]["y"] += overlap
 
     # Curve end labels: Strategy name ONLY (no numbers / penalty levels)
     for item in end_labels:
         svg_parts.append(
-            f'<text x="{item["x"] + 8:.1f}" y="{item["y"] + 4:.1f}" font-size="11.5" font-weight="600" fill="{item["color"]}">'
+            f'<text x="{item["x"] + 8:.1f}" y="{item["y"] + 4:.1f}" font-size="11" font-weight="600" fill="{item["color"]}">'
             f'{item["strat"]}</text>'
         )
 
@@ -872,7 +878,7 @@ def generate_benchmark_html(
             <div class="key-finding-box">
                 <div class="key-finding-tag">Key Finding</div>
                 <div class="key-finding-body">
-                    Compliance-guarded recovery (<strong>agent_rules</strong>) overtakes unconstrained retrying (<strong>naive_rules</strong>) at an exact penalty of <strong>₹{breakeven_penalty_inr:,.2f}</strong> per violation. Above <strong>₹{oracle_threshold_inr:,.2f}</strong>, even an unconstrained profit-maximizing Oracle with full model knowledge completely eliminates all violations, verifying that regulatory penalties enforce optimal compliant behavior.
+                    Compliance-guarded recovery (<strong>agent_rules</strong>) overtakes unconstrained retrying (<strong>naive_rules</strong>) at an exact penalty of <strong>₹{breakeven_penalty_inr:,.2f}</strong> per violation. Above <strong>₹{oracle_threshold_inr:,.2f}</strong>, even an unconstrained profit-maximizing Oracle with full model knowledge completely eliminates all violations — above this price, violation stops paying on its own terms.
                 </div>
             </div>
 

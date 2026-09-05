@@ -1,6 +1,6 @@
 # Benchmark Results – Recovery Agent Multi-Strategy Evaluation
 
-**Timestamp:** 2026-09-05 11:20:40 | **Batch Size:** 40 records | **Seeds:** 200 | **Total at Risk:** ₹98,952.00 | **Penalty:** ₹500
+**Timestamp:** 2026-09-05 13:43:25 | **Batch Size:** 40 records | **Seeds:** 200 | **Total at Risk:** ₹98,952.00 | **Penalty:** ₹500
 
 `agent_llm composition: 31 live LLM / 0 rule fallback (cache miss) / 7 deterministic guard`
 
