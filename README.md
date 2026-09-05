@@ -22,14 +22,65 @@ model (`outcome_model.py`). No live merchant money was recovered.
 
 ```mermaid
 flowchart TD
-  A["Batch: 40 records"] --> C
-  B["Webhook: HMAC + SQLite idempotency<br/>+ 14-day dunning state"] --> C
-  C["classify_and_decide<br/><b>SHARED ENGINE</b>"] --> D["5 deterministic guards"]
-  D -->|"resolved without model: 9 of 40"| G["Bounded action"]
-  D -->|"ambiguous context"| E["Gemini Flash<br/>(cached, replayable)"]
-  E --> G
-  G --> H["Outcome model<br/><b>CANNOT see decision engine</b><br/>P = f(reason, action, seed)"]
-  H --> I["audit_log.jsonl<br/>+ escalations.json"]
+    subgraph INGESTION ["1. Ingestion Layer"]
+        A["Batch Processing<br/>40 Indian Recurring Records"]
+        B["FastAPI Webhook Receiver<br/>HMAC-SHA256 + SQLite Idempotency<br/>14-Day Dunning State Continuity"]
+    end
+
+    subgraph ENGINE ["2. Decision Engine (SHARED ENGINE)"]
+        C{"classify_and_decide<br/><b>SHARED CORE ENGINE</b>"}
+
+        subgraph GUARDS ["5 Deterministic Safety Guards"]
+            G1["Guard 1: Reconciliation Check<br/><i>Block possibly_debited</i>"]
+            G2["Guard 2: Per-Method Retry Caps<br/><i>UPI: 3 | Card: 4</i>"]
+            G3["Guard 3: Prompt Injection Defence<br/><i>Sanitize merchant notes</i>"]
+            G4["Guard 4: Hard Decline and Fail-Closed<br/><i>Non-retryable issuer declines</i>"]
+            G5["Guard 5: Low Confidence and Dispute<br/><i>EV-gated escalation</i>"]
+        end
+
+        LLM["Gemini Flash LLM<br/>Structured Output<br/><i>(Cached, 100% replayable)</i>"]
+    end
+
+    subgraph ACTION ["3. Bounded Action Space"]
+        ACT["Bounded Policy Action<br/>• retry_now<br/>• resend_pre_debit_notice (RBI compliant)<br/>• send_card_update_link / upi_nudge<br/>• request_mandate_reissue<br/>• escalate_to_human (EV-gated)<br/>• stop_and_writeoff"]
+    end
+
+    subgraph OUTCOME ["4. Independent Ground-Truth Evaluation"]
+        MODEL["Outcome Simulation Model<br/><b>CANNOT see decision engine</b><br/>P = f(failure_reason, action, seed)<br/>Deterministic SHA-256 seed draws"]
+    end
+
+    subgraph ARTIFACTS ["5. Persistent Artifacts and Audit Trail"]
+        AUDIT[("audit_log.jsonl<br/>Immutable JSONL Ledger")]
+        ESC[("escalations.json<br/>Positive-EV Human Queue")]
+        BENCH["benchmark_report.html<br/>The Compliance Pricing Curve"]
+    end
+
+    A --> C
+    B --> C
+    C --> GUARDS
+    GUARDS -->|"Resolved deterministically (9 of 40)"| ACT
+    GUARDS -->|"Ambiguous failure context"| LLM
+    LLM --> ACT
+    ACT --> MODEL
+    MODEL --> AUDIT
+    MODEL --> ESC
+    MODEL --> BENCH
+
+    classDef ingestion fill:#f8fafc,stroke:#64748b,stroke-width:1.5px,color:#0f172a;
+    classDef engine fill:#eff6ff,stroke:#2563eb,stroke-width:2px,color:#1e3a8a;
+    classDef guard fill:#fef2f2,stroke:#ef4444,stroke-width:1.5px,color:#991b1b;
+    classDef llm fill:#faf5ff,stroke:#8b5cf6,stroke-width:1.5px,color:#581c87;
+    classDef action fill:#ecfdf5,stroke:#10b981,stroke-width:1.5px,color:#065f46;
+    classDef outcome fill:#fffbeb,stroke:#d97706,stroke-width:2px,color:#78350f;
+    classDef artifacts fill:#f1f5f9,stroke:#475569,stroke-width:1.5px,color:#0f172a;
+
+    class A,B ingestion;
+    class C engine;
+    class G1,G2,G3,G4,G5 guard;
+    class LLM llm;
+    class ACT action;
+    class MODEL outcome;
+    class AUDIT,ESC,BENCH artifacts;
 ```
 
 ![The compliance pricing curve](docs/benchmark_report.png)
