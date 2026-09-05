@@ -9,49 +9,41 @@ Failed Subscription Recovery Agent evaluating 40 realistic Indian recurring paym
 flowchart LR
     subgraph INGEST ["1. Ingestion Layer"]
         direction TB
-        A["Batch Processing<br/>40 Indian Recurring Records"]
-        B["FastAPI Webhooks<br/>HMAC + SQLite Dedupe<br/>14-Day Dunning State"]
+        A["<b>Batch Evaluation</b><br/>40 Indian recurring failures"]
+        B["<b>FastAPI Webhooks</b><br/>HMAC-SHA256 verification<br/>14-day SQLite dunning ledger"]
     end
 
     subgraph ENGINE ["2. Decision Engine (SHARED ENGINE)"]
         direction TB
-        C["classify_and_decide<br/><b>SHARED CORE ENGINE</b>"]
-        G["5 Safety Guards<br/>1. Reconciliation Check<br/>2. Per-Method Retry Caps<br/>3. Prompt Injection Sanitizer<br/>4. Hard Decline Fail-Closed<br/>5. Low-Confidence Override"]
-        LLM["Gemini Flash LLM<br/>Structured Output<br/><i>(Cached, 100% Replayable)</i>"]
-        C --> G
-        G -->|"Ambiguous Context"| LLM
+        CORE{"classify_and_decide<br/><b>SHARED ENGINE</b>"}
+        GUARDS["<b>5 Deterministic Guards</b><br/>1. Reconciliation (block unknown)<br/>2. Per-method retry caps (UPI 3 / Card 4)<br/>3. Prompt injection sanitization<br/>4. Hard declines & fail-closed<br/>5. Low-confidence EV gate"]
+        LLM["<b>Gemini Flash LLM</b><br/>Structured JSON output<br/><i>(Cached, 100% replayable)</i>"]
+        
+        CORE --> GUARDS
+        GUARDS -->|"Resolved deterministically (9 of 40)"| ACT
+        GUARDS -->|"Ambiguous context"| LLM
+        LLM --> ACT
     end
 
-    subgraph ACTION ["3. Bounded Action Space"]
-        ACT["Enforced Actions<br/>• retry_now<br/>• resend_pre_debit_notice<br/>• send_card_update_link<br/>• send_upi_pin_nudge<br/>• request_mandate_reissue<br/>• escalate_to_human (EV-gated)<br/>• stop_and_writeoff"]
-    end
-
-    subgraph EVAL ["4. Independent Evaluation & Ledger"]
+    subgraph OUTCOME ["3. Execution & Simulation"]
         direction TB
-        MODEL["Outcome Simulation Model<br/><b>CANNOT see decision engine</b><br/>P = f(reason, action, seed)<br/>Deterministic SHA-256 draws"]
-        OUT[("Persistent Artifacts<br/>• audit_log.jsonl (ledger)<br/>• escalations.json (queue)<br/>• benchmark_report.html (pricing)")]
-        MODEL --> OUT
+        ACT["<b>Bounded Policy Action</b><br/>retry · notice · nudge · reissue · escalate · writeoff"]
+        MODEL["<b>Outcome Simulation Model</b><br/><b>CANNOT see decision engine</b><br/>P = f(failure_reason, action, seed)<br/>Cryptographic SHA-256 draws"]
+        ACT --> MODEL
     end
 
-    A --> C
-    B --> C
-    G -->|"Resolved (9 of 40)"| ACT
-    LLM --> ACT
-    ACT --> MODEL
+    subgraph LEDGER ["4. Audit Ledger & Outputs"]
+        direction TB
+        AUDIT[("audit_log.jsonl<br/>Immutable JSONL log")]
+        ESC[("escalations.json<br/>Positive-EV queue")]
+        BENCH["benchmark_report.html<br/>The Pricing Curve"]
+        MODEL --> AUDIT
+        MODEL --> ESC
+        MODEL --> BENCH
+    end
 
-    classDef ingestion fill:#f8fafc,stroke:#64748b,stroke-width:1.5px,color:#0f172a;
-    classDef engine fill:#eff6ff,stroke:#2563eb,stroke-width:2px,color:#1e3a8a;
-    classDef guard fill:#fef2f2,stroke:#dc2626,stroke-width:1.5px,color:#991b1b;
-    classDef llm fill:#faf5ff,stroke:#7c3aed,stroke-width:1.5px,color:#581c87;
-    classDef action fill:#ecfdf5,stroke:#059669,stroke-width:2px,color:#065f46;
-    classDef eval fill:#fffbeb,stroke:#d97706,stroke-width:2px,color:#78350f;
-
-    class A,B ingestion;
-    class C engine;
-    class G guard;
-    class LLM llm;
-    class ACT action;
-    class MODEL,OUT eval;
+    A --> CORE
+    B --> CORE
 ```
 
 ## Core Modules
