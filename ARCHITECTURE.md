@@ -3,6 +3,20 @@
 ## System Overview
 Failed Subscription Recovery Agent evaluating 40 realistic Indian recurring payment failures across 7 benchmark strategies, tested against an independent outcome simulation model across 200 paired seeds.
 
+## System Architecture
+
+```mermaid
+flowchart TD
+  A["Batch: 40 records"] --> C
+  B["Webhook: HMAC + SQLite idempotency<br/>+ 14-day dunning state"] --> C
+  C["classify_and_decide<br/><b>SHARED ENGINE</b>"] --> D["5 deterministic guards"]
+  D -->|"resolved without model: 9 of 40"| G["Bounded action"]
+  D -->|"ambiguous context"| E["Gemini Flash<br/>(cached, replayable)"]
+  E --> G
+  G --> H["Outcome model<br/><b>CANNOT see decision engine</b><br/>P = f(reason, action, seed)"]
+  H --> I["audit_log.jsonl<br/>+ escalations.json"]
+```
+
 ## Core Modules
 - `outcome_model.py`: Ground-truth outcome simulation. Uses independent `RECOVERY_MATRIX`, exponential attempt decay (`0.75^(attempts-1)`), action unit costs, and RBI/network compliance violation penalties. Outcomes are cryptographically seeded via SHA-256 for deterministic reproducibility.
 - `strategies.py`: Decoupled strategy definitions for all 7 benchmark baselines (`no_action`, `always_retry`, `message_only`, `naive_rules`, `agent_rules`, `agent_llm`, `oracle`). Includes persistent decision cache (`llm_decision_cache.json`) for zero-API reproducibility.

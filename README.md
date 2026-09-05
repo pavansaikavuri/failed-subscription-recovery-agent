@@ -9,16 +9,31 @@ seeded draws.
 | | |
 |---|---|
 | Revenue at risk | ₹98,952 |
-| Agent net recovered (mean, 200 seeds) | **₹21,677** |
-| Gross recovery rate | 23.3% |
+| Agent net recovered (mean, 200 seeds) | **₹21,822** |
+| Gross recovery rate | 23.1% |
 | Compliance violations | **0** |
 | Oracle upper bound | ₹27,509 |
 | Naive always-retry | ₹5,017 |
 
 All recovery outcomes are **simulated** under an explicit probability
-model (`outcome_model.py`). No live merchant money was recovered. The
-model is calibrated so that naive retry strategies land in the 13–17%
-band reported for basic retry rules in industry sources.
+model (`outcome_model.py`). No live merchant money was recovered.
+
+## Architecture
+
+```mermaid
+flowchart TD
+  A["Batch: 40 records"] --> C
+  B["Webhook: HMAC + SQLite idempotency<br/>+ 14-day dunning state"] --> C
+  C["classify_and_decide<br/><b>SHARED ENGINE</b>"] --> D["5 deterministic guards"]
+  D -->|"resolved without model: 9 of 40"| G["Bounded action"]
+  D -->|"ambiguous context"| E["Gemini Flash<br/>(cached, replayable)"]
+  E --> G
+  G --> H["Outcome model<br/><b>CANNOT see decision engine</b><br/>P = f(reason, action, seed)"]
+  H --> I["audit_log.jsonl<br/>+ escalations.json"]
+```
+
+![The compliance pricing curve](docs/benchmark_report.png)
+*The compliance pricing curve. Generated offline by python pipeline.py --benchmark — no API key, no server.*
 
 ## The finding: compliance has a price, and I derived it
 
@@ -51,7 +66,7 @@ Across the 40-record evaluation batch, three distinct regulatory penalty thresho
 3. **₹1,351.22 per violation** — *An unconstrained profit-maximiser abandons violation entirely.*
    Above ₹1,351.22, even an omniscient profit-maximising Oracle with full model knowledge incurs 0 violations. Driven by the highest-ticket violation in the batch (`pay_Ex11kLmNoPqR10`, ₹9,999, `gateway_timeout` at retry cap), beyond this penalty nothing pays.
 
-State plainly: below ₹62 no violation is deterred; between ₹889 and ₹1,351 compliance is the better policy while individual high-value violations remain individually profitable; above ₹1,351 nothing pays. Note that all three thresholds are derived programmatically from this 40-record batch and are batch-specific, not general constants.
+*(All three thresholds are derived programmatically from this 40-record batch and are batch-specific, not general constants).*
 
 ### Expected-value gating on human escalation
 
@@ -95,7 +110,7 @@ ambiguous, not as a router for cases an `if` statement decides.
 
 ## How it works
 
-Batch → Pydantic validation → four deterministic guards → decision
+Batch → Pydantic validation → five deterministic guards → decision
 (Gemini structured output, or rules) → independent outcome model →
 audit ledger (`audit_log.jsonl`) + financial counters.
 
@@ -152,7 +167,7 @@ python pipeline.py --campaign               # closed-loop multi-cycle recovery l
 python pipeline.py --demo-injection         # Guard 5 prompt injection defence demo
 python pipeline.py --benchmark              # full evaluation, no API key (HTML + MD)
 python pipeline.py --sweep-penalty          # sensitivity analysis
-pytest tests/                               # 26 tests across guards, campaign, outcome model, webhook
+pytest tests/                               # 38 tests across guards, campaign, outcome model, webhook
 python pipeline.py --demo-retry-exhaustion
 python pipeline.py --demo-out-of-scope
 python pipeline.py --demo-low-confidence
@@ -175,7 +190,7 @@ reported standard errors.
 could not be wrong, and "always return retry_now" would have scored
 highest. The reported 35.5% recovery rate measured nothing. Rebuilt as
 an independent outcome model keyed on `(failure_reason, action, seed)`.
-The honest number came out at 23.3%.
+The honest number came out at 23.1%.
 
 **The LLM path was measuring its own fallback.** Free-tier quota
 exhausted mid-batch; 11 of 31 records silently fell through to rules,
@@ -200,7 +215,7 @@ In addition to batch simulation, the system provides a production-grade FastAPI 
 - **Idempotency Ledger**: Deduplication of duplicate webhook events within `dedupe.ttl_hours` (72h).
 - **Multi-Attempt State Continuity**: SQLite ledger tracking sequential failures per `subscription_id` within `dedupe.dunning_window_hours` (336h = 14 days). Rather than evaluating each webhook in isolation, accumulated attempt counts feed into Guard 2 (per-method retry caps).
 - **Public Subscription Audit Endpoint**: `GET /subscriptions/{subscription_id}` exposes the complete chronological sequence of webhook events and recovery actions taken during the dunning cycle.
-- **Verified Error Normalization** (`error_normalizer.py`): Maps verified Razorpay public gateway codes (`card_declined`, `payment_declined`, `card_expired`, `payment_timed_out`, `gateway_technical_error`, `bank_technical_error`, `payment_risk_check_failed`, `GATEWAY_ERROR`) into the internal 9-reason taxonomy. Unknown or unverified codes are strictly rejected out-of-scope to deterministic write-off by design rather than guessed.
+- **Verified Error Normalization** (`error_normalizer.py`): Maps verified Razorpay public gateway codes (`card_declined`, `card_expired`, `payment_timed_out`, `gateway_technical_error`, `bank_technical_error`, `GATEWAY_ERROR`) into the internal 9-reason taxonomy. Ambiguous or unverified codes (such as `payment_declined` and `payment_risk_check_failed`) are strictly rejected out-of-scope to deterministic write-off by design rather than guessed.
 
 To demonstrate multi-attempt state continuity and accumulated retry cap exhaustion:
 ```bash
@@ -211,13 +226,9 @@ Output:
 
 ## Limitations
 
-- All outcomes simulated; probabilities are stated assumptions in
-  `outcome_model.py`, calibrated against published industry retry
-  recovery rates, not fitted to merchant history.
+- All outcomes simulated; probabilities are stated domain priors in
+  `outcome_model.py`, not fitted to merchant history.
 - 40 records. Wide per-seed variance — comparisons use
   paired per-seed differences with standard errors, not raw ranges.
-- Production step provides FastAPI receiver for `payment.failed` with SQLite state continuity and idempotency.
 - No live external dispatch to WhatsApp/SMS (mocked to communication logs).
-- Audit trail written persistently to `audit_log.jsonl` with escalations
-  exported to `escalations.json`.
 
