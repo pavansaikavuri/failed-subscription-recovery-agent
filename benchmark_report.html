@@ -369,7 +369,7 @@
                 <span class="chip">Revenue at Risk: <strong>₹98,952.00</strong></span>
                 <span class="chip">Base Penalty: <strong>₹500 / violation</strong></span>
                 <span class="chip">Policy Version: <strong>d2975ba696cd</strong></span>
-                <span class="chip">Generated: <strong>2026-09-05 14:04:33</strong></span>
+                <span class="chip">Generated: <strong>2026-09-05 14:16:32</strong></span>
             </div>
             <div class="composition-box">
                 agent_llm composition: 31 live LLM / 0 rule fallback (cache miss) / 7 deterministic guard
@@ -516,7 +516,7 @@
 <g><line x1="287.3" y1="50" x2="287.3" y2="68" stroke="#94a3b8" stroke-width="1.2" /><rect x="287.3" y="18" width="156" height="32" rx="4" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1.2" /><text x="365.3" y="31.0" text-anchor="middle" font-size="10" font-weight="bold" fill="#334155" style="font-variant-numeric: tabular-nums;">Oracle Threshold: ₹1,351.22</text><text x="365.3" y="43.0" text-anchor="middle" font-size="8.5" font-weight="600" fill="#64748b">violations drop to 0</text></g>
 </svg>
             </div>
-            <p class="chart-caption">Lines show mean net recovery across penalty levels from ₹0 to ₹5,000. agent_rules and agent_llm nearly coincide (differing by only ₹285 at this scale) — that near-coincidence is the finding: compliance guards and expected-value gating achieve parity with an LLM decision engine while eliminating non-compliance risk. See the sensitivity table for exact values.</p>
+            <p class="chart-caption">Lines show mean net recovery across penalty levels from Rs 0 to Rs 5,000. agent_rules and agent_llm nearly coincide - paired across 200 identical seeds the difference is -Rs 285 +/- Rs 570, smaller than its own standard error. Both run zero violations. See the sensitivity table for exact values.</p>
         </section>
 
         <!-- 2.d Horizontal Bar Chart at Base Penalty -->
@@ -545,13 +545,13 @@
 <line x1="765.0" y1="35" x2="765.0" y2="339" stroke="#f1f5f9" stroke-width="1" />
 <text x="765.0" y="359" text-anchor="middle" font-size="11" fill="#64748b" style="font-variant-numeric: tabular-nums;">₹35,000</text>
 <text x="450.0" y="375" text-anchor="middle" font-size="11.5" font-weight="600" fill="#334155">Mean Net Recovery (₹) at ₹500 Violation Penalty Level</text>
-<rect x="135" y="35" width="495.2" height="28" fill="#7c3aed" rx="4" />
+<rect x="135" y="35" width="495.2" height="28" fill="#94a3b8" rx="4" />
 <text x="123" y="53" text-anchor="end" font-size="12" font-weight="600" fill="#0f172a">oracle</text>
 <line x1="619.2" y1="49.0" x2="641.2" y2="49.0" stroke="#0f172a" stroke-width="2" />
 <line x1="619.2" y1="44.0" x2="619.2" y2="54.0" stroke="#0f172a" stroke-width="2" />
 <line x1="641.2" y1="44.0" x2="641.2" y2="54.0" stroke="#0f172a" stroke-width="2" />
 <text x="651.2" y="53" font-size="12" font-weight="700" fill="#0f172a" style="font-variant-numeric: tabular-nums;">₹27,509.45 <tspan font-size="11" font-weight="normal" fill="#64748b">(±₹610.51)</tspan></text>
-<rect x="135" y="81" width="434.8" height="28" fill="#d97706" rx="4" />
+<rect x="135" y="81" width="434.8" height="28" fill="#dc2626" rx="4" />
 <text x="123" y="99" text-anchor="end" font-size="12" font-weight="600" fill="#0f172a">naive_rules</text>
 <line x1="559.1" y1="95.0" x2="580.4" y2="95.0" stroke="#0f172a" stroke-width="2" />
 <line x1="559.1" y1="90.0" x2="559.1" y2="100.0" stroke="#0f172a" stroke-width="2" />
@@ -560,13 +560,13 @@
 <rect x="135" y="127" width="392.8" height="28" fill="#2563eb" rx="4" />
 <text x="123" y="145" text-anchor="end" font-size="12" font-weight="600" fill="#0f172a">agent_rules</text>
 <text x="537.8" y="145" font-size="12" font-weight="700" fill="#0f172a" style="font-variant-numeric: tabular-nums;">₹21,822.29 <tspan font-size="11" font-weight="normal" fill="#64748b">(Baseline)</tspan></text>
-<rect x="135" y="173" width="387.7" height="28" fill="#0f172a" rx="4" />
+<rect x="135" y="173" width="387.7" height="28" fill="#334155" rx="4" />
 <text x="123" y="191" text-anchor="end" font-size="12" font-weight="600" fill="#0f172a">agent_llm</text>
 <line x1="512.4" y1="187.0" x2="532.9" y2="187.0" stroke="#0f172a" stroke-width="2" />
 <line x1="512.4" y1="182.0" x2="512.4" y2="192.0" stroke="#0f172a" stroke-width="2" />
 <line x1="532.9" y1="182.0" x2="532.9" y2="192.0" stroke="#0f172a" stroke-width="2" />
 <text x="542.9" y="191" font-size="12" font-weight="700" fill="#0f172a" style="font-variant-numeric: tabular-nums;">₹21,537.24 <tspan font-size="11" font-weight="normal" fill="#64748b">(±₹570.06)</tspan></text>
-<rect x="135" y="219" width="305.9" height="28" fill="#059669" rx="4" />
+<rect x="135" y="219" width="305.9" height="28" fill="#334155" rx="4" />
 <text x="123" y="237" text-anchor="end" font-size="12" font-weight="600" fill="#0f172a">message_only</text>
 <line x1="429.3" y1="233.0" x2="452.5" y2="233.0" stroke="#0f172a" stroke-width="2" />
 <line x1="429.3" y1="228.0" x2="429.3" y2="238.0" stroke="#0f172a" stroke-width="2" />
@@ -578,7 +578,7 @@
 <line x1="214.5" y1="274.0" x2="214.5" y2="284.0" stroke="#0f172a" stroke-width="2" />
 <line x1="236.1" y1="274.0" x2="236.1" y2="284.0" stroke="#0f172a" stroke-width="2" />
 <text x="246.1" y="283" font-size="12" font-weight="700" fill="#0f172a" style="font-variant-numeric: tabular-nums;">₹5,016.53 <tspan font-size="11" font-weight="normal" fill="#64748b">(±₹599.05)</tspan></text>
-<rect x="135" y="311" width="0.0" height="28" fill="#64748b" rx="4" />
+<rect x="135" y="311" width="0.0" height="28" fill="#cbd5e1" rx="4" />
 <text x="123" y="329" text-anchor="end" font-size="12" font-weight="600" fill="#0f172a">no_action</text>
 <line x1="135.0" y1="325.0" x2="145.0" y2="325.0" stroke="#0f172a" stroke-width="2" />
 <line x1="135.0" y1="320.0" x2="135.0" y2="330.0" stroke="#0f172a" stroke-width="2" />
@@ -618,7 +618,7 @@
             <td class="text-center font-bold text-slate-500">1</td>
             <td>
                 <div class="strategy-badge">
-                    <span class="strategy-dot" style="background-color: #7c3aed;"></span>
+                    <span class="strategy-dot" style="background-color: #94a3b8;"></span>
                     <strong>oracle</strong>
                 </div>
             </td>
@@ -638,7 +638,7 @@
             <td class="text-center font-bold text-slate-500">2</td>
             <td>
                 <div class="strategy-badge">
-                    <span class="strategy-dot" style="background-color: #d97706;"></span>
+                    <span class="strategy-dot" style="background-color: #dc2626;"></span>
                     <strong>naive_rules</strong>
                 </div>
             </td>
@@ -678,7 +678,7 @@
             <td class="text-center font-bold text-slate-500">4</td>
             <td>
                 <div class="strategy-badge">
-                    <span class="strategy-dot" style="background-color: #0f172a;"></span>
+                    <span class="strategy-dot" style="background-color: #334155;"></span>
                     <strong>agent_llm</strong>
                 </div>
             </td>
@@ -698,7 +698,7 @@
             <td class="text-center font-bold text-slate-500">5</td>
             <td>
                 <div class="strategy-badge">
-                    <span class="strategy-dot" style="background-color: #059669;"></span>
+                    <span class="strategy-dot" style="background-color: #334155;"></span>
                     <strong>message_only</strong>
                 </div>
             </td>
@@ -738,7 +738,7 @@
             <td class="text-center font-bold text-slate-500">7</td>
             <td>
                 <div class="strategy-badge">
-                    <span class="strategy-dot" style="background-color: #64748b;"></span>
+                    <span class="strategy-dot" style="background-color: #cbd5e1;"></span>
                     <strong>no_action</strong>
                 </div>
             </td>
@@ -775,7 +775,7 @@
                         </tr>
                     </thead>
                     <tbody>
-                        <tr ><td class="font-bold text-slate-900 text-center num-cell">₹0</td><td class="text-right text-slate-700 num-cell">₹28,159.94</td><td class="text-right text-slate-700 num-cell">₹27,154.31</td><td class="text-right text-slate-700 num-cell">₹21,822.29</td><td class="text-right text-slate-700 num-cell">₹21,537.24</td><td class="text-right text-slate-700 num-cell">₹16,993.97</td><td class="text-right text-slate-700 num-cell">₹13,016.53</td><td class="text-right text-slate-700 num-cell">₹0.00</td><td class="text-center"><span class="badge-deployable" style="background: #d9770615; color: #d97706; border: 1px solid #d9770640;">naive_rules</span></td></tr><tr ><td class="font-bold text-slate-900 text-center num-cell">₹250</td><td class="text-right text-slate-700 num-cell">₹27,759.45</td><td class="text-right text-slate-700 num-cell">₹25,654.31</td><td class="text-right text-slate-700 num-cell">₹21,822.29</td><td class="text-right text-slate-700 num-cell">₹21,537.24</td><td class="text-right text-slate-700 num-cell">₹16,993.97</td><td class="text-right text-slate-700 num-cell">₹9,016.53</td><td class="text-right text-slate-700 num-cell">₹0.00</td><td class="text-center"><span class="badge-deployable" style="background: #d9770615; color: #d97706; border: 1px solid #d9770640;">naive_rules</span></td></tr><tr ><td class="font-bold text-slate-900 text-center num-cell">₹500</td><td class="text-right text-slate-700 num-cell">₹27,509.45</td><td class="text-right text-slate-700 num-cell">₹24,154.31</td><td class="text-right text-slate-700 num-cell">₹21,822.29</td><td class="text-right text-slate-700 num-cell">₹21,537.24</td><td class="text-right text-slate-700 num-cell">₹16,993.97</td><td class="text-right text-slate-700 num-cell">₹5,016.53</td><td class="text-right text-slate-700 num-cell">₹0.00</td><td class="text-center"><span class="badge-deployable" style="background: #d9770615; color: #d97706; border: 1px solid #d9770640;">naive_rules</span></td></tr><tr class="highlight-row"><td class="font-bold text-slate-900 text-center num-cell">₹889</td><td class="text-right text-slate-700 num-cell">₹27,120.45</td><td class="text-right text-slate-700 num-cell">₹21,820.31</td><td class="text-right text-slate-700 num-cell">₹21,822.29</td><td class="text-right text-slate-700 num-cell">₹21,537.24</td><td class="text-right text-slate-700 num-cell">₹16,993.97</td><td class="text-right text-danger font-bold num-cell">₹-1,207.46</td><td class="text-right text-slate-700 num-cell">₹0.00</td><td class="text-center"><span class="badge-deployable" style="background: #2563eb15; color: #2563eb; border: 1px solid #2563eb40;">agent_rules</span></td></tr><tr ><td class="font-bold text-slate-900 text-center num-cell">₹1,500</td><td class="text-right text-slate-700 num-cell">₹26,110.62</td><td class="text-right text-slate-700 num-cell">₹18,154.31</td><td class="text-right text-slate-700 num-cell">₹21,822.29</td><td class="text-right text-slate-700 num-cell">₹21,537.24</td><td class="text-right text-slate-700 num-cell">₹16,993.97</td><td class="text-right text-danger font-bold num-cell">₹-10,983.47</td><td class="text-right text-slate-700 num-cell">₹0.00</td><td class="text-center"><span class="badge-deployable" style="background: #2563eb15; color: #2563eb; border: 1px solid #2563eb40;">agent_rules</span></td></tr><tr ><td class="font-bold text-slate-900 text-center num-cell">₹3,000</td><td class="text-right text-slate-700 num-cell">₹26,110.62</td><td class="text-right text-slate-700 num-cell">₹9,154.32</td><td class="text-right text-slate-700 num-cell">₹21,822.29</td><td class="text-right text-slate-700 num-cell">₹21,537.24</td><td class="text-right text-slate-700 num-cell">₹16,993.97</td><td class="text-right text-danger font-bold num-cell">₹-34,983.46</td><td class="text-right text-slate-700 num-cell">₹0.00</td><td class="text-center"><span class="badge-deployable" style="background: #2563eb15; color: #2563eb; border: 1px solid #2563eb40;">agent_rules</span></td></tr><tr ><td class="font-bold text-slate-900 text-center num-cell">₹5,000</td><td class="text-right text-slate-700 num-cell">₹26,110.62</td><td class="text-right text-danger font-bold num-cell">₹-2,845.68</td><td class="text-right text-slate-700 num-cell">₹21,822.29</td><td class="text-right text-slate-700 num-cell">₹21,537.24</td><td class="text-right text-slate-700 num-cell">₹16,993.97</td><td class="text-right text-danger font-bold num-cell">₹-66,983.46</td><td class="text-right text-slate-700 num-cell">₹0.00</td><td class="text-center"><span class="badge-deployable" style="background: #2563eb15; color: #2563eb; border: 1px solid #2563eb40;">agent_rules</span></td></tr>
+                        <tr ><td class="font-bold text-slate-900 text-center num-cell">₹0</td><td class="text-right text-slate-700 num-cell">₹28,159.94</td><td class="text-right text-slate-700 num-cell">₹27,154.31</td><td class="text-right text-slate-700 num-cell">₹21,822.29</td><td class="text-right text-slate-700 num-cell">₹21,537.24</td><td class="text-right text-slate-700 num-cell">₹16,993.97</td><td class="text-right text-slate-700 num-cell">₹13,016.53</td><td class="text-right text-slate-700 num-cell">₹0.00</td><td class="text-center"><span class="badge-deployable" style="background: #dc262615; color: #dc2626; border: 1px solid #dc262640;">naive_rules</span></td></tr><tr ><td class="font-bold text-slate-900 text-center num-cell">₹250</td><td class="text-right text-slate-700 num-cell">₹27,759.45</td><td class="text-right text-slate-700 num-cell">₹25,654.31</td><td class="text-right text-slate-700 num-cell">₹21,822.29</td><td class="text-right text-slate-700 num-cell">₹21,537.24</td><td class="text-right text-slate-700 num-cell">₹16,993.97</td><td class="text-right text-slate-700 num-cell">₹9,016.53</td><td class="text-right text-slate-700 num-cell">₹0.00</td><td class="text-center"><span class="badge-deployable" style="background: #dc262615; color: #dc2626; border: 1px solid #dc262640;">naive_rules</span></td></tr><tr ><td class="font-bold text-slate-900 text-center num-cell">₹500</td><td class="text-right text-slate-700 num-cell">₹27,509.45</td><td class="text-right text-slate-700 num-cell">₹24,154.31</td><td class="text-right text-slate-700 num-cell">₹21,822.29</td><td class="text-right text-slate-700 num-cell">₹21,537.24</td><td class="text-right text-slate-700 num-cell">₹16,993.97</td><td class="text-right text-slate-700 num-cell">₹5,016.53</td><td class="text-right text-slate-700 num-cell">₹0.00</td><td class="text-center"><span class="badge-deployable" style="background: #dc262615; color: #dc2626; border: 1px solid #dc262640;">naive_rules</span></td></tr><tr class="highlight-row"><td class="font-bold text-slate-900 text-center num-cell">₹889</td><td class="text-right text-slate-700 num-cell">₹27,120.45</td><td class="text-right text-slate-700 num-cell">₹21,820.31</td><td class="text-right text-slate-700 num-cell">₹21,822.29</td><td class="text-right text-slate-700 num-cell">₹21,537.24</td><td class="text-right text-slate-700 num-cell">₹16,993.97</td><td class="text-right text-danger font-bold num-cell">₹-1,207.46</td><td class="text-right text-slate-700 num-cell">₹0.00</td><td class="text-center"><span class="badge-deployable" style="background: #2563eb15; color: #2563eb; border: 1px solid #2563eb40;">agent_rules</span></td></tr><tr ><td class="font-bold text-slate-900 text-center num-cell">₹1,500</td><td class="text-right text-slate-700 num-cell">₹26,110.62</td><td class="text-right text-slate-700 num-cell">₹18,154.31</td><td class="text-right text-slate-700 num-cell">₹21,822.29</td><td class="text-right text-slate-700 num-cell">₹21,537.24</td><td class="text-right text-slate-700 num-cell">₹16,993.97</td><td class="text-right text-danger font-bold num-cell">₹-10,983.47</td><td class="text-right text-slate-700 num-cell">₹0.00</td><td class="text-center"><span class="badge-deployable" style="background: #2563eb15; color: #2563eb; border: 1px solid #2563eb40;">agent_rules</span></td></tr><tr ><td class="font-bold text-slate-900 text-center num-cell">₹3,000</td><td class="text-right text-slate-700 num-cell">₹26,110.62</td><td class="text-right text-slate-700 num-cell">₹9,154.32</td><td class="text-right text-slate-700 num-cell">₹21,822.29</td><td class="text-right text-slate-700 num-cell">₹21,537.24</td><td class="text-right text-slate-700 num-cell">₹16,993.97</td><td class="text-right text-danger font-bold num-cell">₹-34,983.46</td><td class="text-right text-slate-700 num-cell">₹0.00</td><td class="text-center"><span class="badge-deployable" style="background: #2563eb15; color: #2563eb; border: 1px solid #2563eb40;">agent_rules</span></td></tr><tr ><td class="font-bold text-slate-900 text-center num-cell">₹5,000</td><td class="text-right text-slate-700 num-cell">₹26,110.62</td><td class="text-right text-danger font-bold num-cell">₹-2,845.68</td><td class="text-right text-slate-700 num-cell">₹21,822.29</td><td class="text-right text-slate-700 num-cell">₹21,537.24</td><td class="text-right text-slate-700 num-cell">₹16,993.97</td><td class="text-right text-danger font-bold num-cell">₹-66,983.46</td><td class="text-right text-slate-700 num-cell">₹0.00</td><td class="text-center"><span class="badge-deployable" style="background: #2563eb15; color: #2563eb; border: 1px solid #2563eb40;">agent_rules</span></td></tr>
                     </tbody>
                 </table>
             </div>
@@ -871,7 +871,7 @@
         <tr>
             <td>
                 <div class="strategy-badge">
-                    <span class="strategy-dot" style="background-color: #7c3aed;"></span>
+                    <span class="strategy-dot" style="background-color: #94a3b8;"></span>
                     <strong>oracle</strong>
                 </div>
             </td>
@@ -885,7 +885,7 @@
         <tr>
             <td>
                 <div class="strategy-badge">
-                    <span class="strategy-dot" style="background-color: #d97706;"></span>
+                    <span class="strategy-dot" style="background-color: #dc2626;"></span>
                     <strong>naive_rules</strong>
                 </div>
             </td>
@@ -913,7 +913,7 @@
         <tr>
             <td>
                 <div class="strategy-badge">
-                    <span class="strategy-dot" style="background-color: #0f172a;"></span>
+                    <span class="strategy-dot" style="background-color: #334155;"></span>
                     <strong>agent_llm</strong>
                 </div>
             </td>
@@ -927,7 +927,7 @@
         <tr>
             <td>
                 <div class="strategy-badge">
-                    <span class="strategy-dot" style="background-color: #059669;"></span>
+                    <span class="strategy-dot" style="background-color: #334155;"></span>
                     <strong>message_only</strong>
                 </div>
             </td>
@@ -955,7 +955,7 @@
         <tr>
             <td>
                 <div class="strategy-badge">
-                    <span class="strategy-dot" style="background-color: #64748b;"></span>
+                    <span class="strategy-dot" style="background-color: #cbd5e1;"></span>
                     <strong>no_action</strong>
                 </div>
             </td>

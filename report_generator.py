@@ -4,13 +4,13 @@ from datetime import datetime
 
 
 STRATEGY_COLORS = {
-    "oracle": "#7c3aed",
-    "agent_rules": "#2563eb",
-    "agent_llm": "#0f172a",
-    "naive_rules": "#d97706",
-    "always_retry": "#dc2626",
-    "message_only": "#059669",
-    "no_action": "#64748b",
+    "agent_rules": "#2563eb",   # single accent blue (subject)
+    "agent_llm": "#334155",     # neutral dark slate (compliant family)
+    "message_only": "#334155",  # neutral dark slate (compliant family)
+    "naive_rules": "#dc2626",   # muted red (value-destroying family)
+    "always_retry": "#dc2626",  # muted red (value-destroying family)
+    "oracle": "#94a3b8",        # light grey (reference bound)
+    "no_action": "#cbd5e1",     # lightest grey (baseline)
 }
 
 STRATEGY_LABELS = {
@@ -920,7 +920,7 @@ def generate_benchmark_html(
             <div class="chart-box">
                 {curve_svg}
             </div>
-            <p class="chart-caption">Lines show mean net recovery across penalty levels from ₹0 to ₹5,000. agent_rules and agent_llm nearly coincide (differing by only ₹285 at this scale) — that near-coincidence is the finding: compliance guards and expected-value gating achieve parity with an LLM decision engine while eliminating non-compliance risk. See the sensitivity table for exact values.</p>
+            <p class="chart-caption">Lines show mean net recovery across penalty levels from Rs 0 to Rs 5,000. agent_rules and agent_llm nearly coincide - paired across 200 identical seeds the difference is -Rs 285 +/- Rs 570, smaller than its own standard error. Both run zero violations. See the sensitivity table for exact values.</p>
         </section>
 
         <!-- 2.d Horizontal Bar Chart at Base Penalty -->
