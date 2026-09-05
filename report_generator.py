@@ -70,29 +70,32 @@ def build_sensitivity_curve_svg(
         f'fill="#ffffff" stroke="#e2e8f0" stroke-width="1" rx="4" />'
     )
 
-    # Horizontal Grid lines and Y labels (step = 10,000)
-    step_y = 10000 if y_range <= 80000 else 20000
-    cur_y = y_floor
-    while cur_y <= y_ceil:
+    # Horizontal Grid lines and Y labels (clean 10,000 interval, anchored at zero)
+    ticks_y = [-70000, -60000, -50000, -40000, -30000, -20000, -10000, 0, 10000, 20000, 30000]
+    for cur_y in ticks_y:
         sy = map_y(cur_y)
         is_zero = (cur_y == 0)
-        line_color = "#94a3b8" if is_zero else "#f1f5f9"
+        line_color = "#475569" if is_zero else "#f1f5f9"
         line_width = "1.5" if is_zero else "1"
-        line_dash = 'stroke-dasharray="4,4"' if is_zero else ""
 
         svg_parts.append(
             f'<line x1="{margin_left}" y1="{sy:.1f}" x2="{margin_left + plot_width}" y2="{sy:.1f}" '
-            f'stroke="{line_color}" stroke-width="{line_width}" {line_dash} />'
+            f'stroke="{line_color}" stroke-width="{line_width}" />'
         )
 
-        font_weight = "600" if is_zero else "400"
+        font_weight = "700" if is_zero else "400"
         text_fill = "#0f172a" if is_zero else "#64748b"
-        label_text = f"₹{cur_y:+,}" if cur_y != 0 else "₹0 (Break-Even)"
+        if cur_y == 0:
+            label_text = "₹0"
+        elif cur_y > 0:
+            label_text = f"₹{cur_y:,}"
+        else:
+            label_text = f"-₹{abs(cur_y):,}"
+
         svg_parts.append(
             f'<text x="{margin_left - 10}" y="{sy + 4:.1f}" text-anchor="end" font-size="11" '
             f'font-weight="{font_weight}" fill="{text_fill}" style="font-variant-numeric: tabular-nums;">{label_text}</text>'
         )
-        cur_y += step_y
 
     # Vertical Grid lines and X labels
     x_ticks = [0, 1000, 2000, 3000, 4000, 5000]
@@ -125,19 +128,35 @@ def build_sensitivity_curve_svg(
     be_x = map_x(breakeven_penalty_inr)
     svg_parts.append(
         f'<line x1="{be_x:.1f}" y1="{margin_top}" x2="{be_x:.1f}" y2="{margin_top + plot_height}" '
-        f'stroke="#d97706" stroke-width="2" stroke-dasharray="6,4" />'
+        f'stroke="#2563eb" stroke-width="1.5" stroke-dasharray="4,4" />'
     )
 
     # MARKER 2: Oracle Compliance Threshold at oracle_threshold_inr
     ot_x = map_x(oracle_threshold_inr)
     svg_parts.append(
         f'<line x1="{ot_x:.1f}" y1="{margin_top}" x2="{ot_x:.1f}" y2="{margin_top + plot_height}" '
-        f'stroke="#7c3aed" stroke-width="2" stroke-dasharray="3,3" />'
+        f'stroke="#94a3b8" stroke-width="1.5" stroke-dasharray="2,3" />'
     )
+
+    # Semantic curve palette encoding the regulatory-economic argument:
+    # - agent_rules: single accent colour (#2563eb blue), heaviest stroke (subject)
+    # - agent_llm & message_only: neutral dark grey (#334155), distinguished only by dash (compliant family)
+    # - naive_rules & always_retry: muted red (#dc2626), distinguished by dash (value-destroying family)
+    # - oracle: light grey dotted (#94a3b8), reference bound
+    # - no_action: lightest grey hairline (#cbd5e1), baseline
+    CURVE_COLORS = {
+        "agent_rules": "#2563eb",
+        "agent_llm": "#334155",
+        "message_only": "#334155",
+        "naive_rules": "#dc2626",
+        "always_retry": "#dc2626",
+        "oracle": "#94a3b8",
+        "no_action": "#cbd5e1",
+    }
 
     # Draw strategy polylines
     # Order so agent_rules is drawn first, agent_llm drawn distinctly on top, and oracle on top
-    strategy_order = ["no_action", "always_retry", "message_only", "naive_rules", "agent_rules", "agent_llm", "oracle"]
+    strategy_order = ["no_action", "always_retry", "naive_rules", "message_only", "agent_rules", "agent_llm", "oracle"]
     end_labels = []
 
     for strat in strategy_order:
@@ -146,47 +165,55 @@ def build_sensitivity_curve_svg(
             val = sweep_results[p].get(strat, 0.0)
             pts.append((map_x(p), map_y(val), val))
 
-        color = STRATEGY_COLORS.get(strat, "#334155")
+        color = CURVE_COLORS.get(strat, "#334155")
         poly_str = " ".join(f"{x:.1f},{y:.1f}" for x, y, _ in pts)
 
         dash = ""
-        width_val = "2.5"
+        width_val = "2.2"
         if strat == "oracle":
             dash = 'stroke-dasharray="2,3"'
-            width_val = "2.5"
+            width_val = "1.8"
         elif strat == "agent_rules":
             width_val = "3.2"
             dash = ""
         elif strat == "agent_llm":
             width_val = "2.2"
             dash = 'stroke-dasharray="4,3"'
+        elif strat == "message_only":
+            width_val = "2.2"
+            dash = 'stroke-dasharray="10,2,2,2"'
         elif strat == "naive_rules":
             width_val = "2.2"
             dash = 'stroke-dasharray="6,3"'
         elif strat == "always_retry":
-            width_val = "2.8"
+            width_val = "2.2"
             dash = ""
-        elif strat == "message_only":
-            width_val = "2.8"
-            dash = 'stroke-dasharray="10,2,2,2"'  # distinct dash-dot pattern
         elif strat == "no_action":
             dash = 'stroke-dasharray="4,4"'
-            width_val = "1.8"
+            width_val = "1.2"
 
         svg_parts.append(
             f'<polyline points="{poly_str}" fill="none" stroke="{color}" stroke-width="{width_val}" '
             f'{dash} stroke-linecap="round" stroke-linejoin="round" />'
         )
 
-        # Plot point dots (agent_llm radius slightly smaller so both paired markers show cleanly)
-        dot_r = "2.5" if strat == "agent_llm" else "3.5"
+        # Plot point dots (distinct marker radius per role)
+        if strat == "agent_rules":
+            dot_r = "3.5"
+        elif strat == "agent_llm":
+            dot_r = "2.5"
+        elif strat in ("naive_rules", "always_retry", "message_only", "oracle"):
+            dot_r = "3.0"
+        else:
+            dot_r = "2.0"
+
         for x, y, _ in pts:
             svg_parts.append(f'<circle cx="{x:.1f}" cy="{y:.1f}" r="{dot_r}" fill="{color}" stroke="#ffffff" stroke-width="1.5" />')
 
         last_x, last_y, last_val = pts[-1]
         end_labels.append({"strat": strat, "x": last_x, "y": last_y, "val": last_val, "color": color})
 
-    # Anchored deconfliction: keep each label anchored to its own series' final y-value
+    # Anchored deconfliction: keep each label anchored to its own series' final y-value at p=5000
     # Symmetrically relax close neighbours so agent_llm sits directly below agent_rules without shifting message_only
     end_labels.sort(key=lambda item: item["y"])
     min_gap = 12.5
@@ -198,64 +225,59 @@ def build_sensitivity_curve_svg(
                 end_labels[k]["y"] -= overlap
                 end_labels[k+1]["y"] += overlap
 
-    # Curve end labels: Strategy name ONLY (no numbers / penalty levels)
+    # Curve end labels: Strategy name ONLY (anchored at right edge p=5000)
     for item in end_labels:
+        font_weight = "700" if item["strat"] == "agent_rules" else "600"
         svg_parts.append(
-            f'<text x="{item["x"] + 8:.1f}" y="{item["y"] + 4:.1f}" font-size="11" font-weight="600" fill="{item["color"]}">'
+            f'<text x="{item["x"] + 8:.1f}" y="{item["y"] + 4:.1f}" font-size="11" font-weight="{font_weight}" fill="{item["color"]}">'
             f'{item["strat"]}</text>'
         )
 
-    # Marker 1 Callout: Break-Even Crossing Point Badge
-    agent_net_at_be = sweep_results[penalties_inr[0]].get("agent_rules", 23619.58)
+    # Marker 1 Intersection Dot on the Curve (computed from actual agent_rules mean net at crossing)
+    agent_net_at_be = sweep_results[penalties_inr[0]].get("agent_rules", 21822.29)
     be_y = map_y(agent_net_at_be)
     svg_parts.append(
-        f'<circle cx="{be_x:.1f}" cy="{be_y:.1f}" r="7" fill="#d97706" stroke="#ffffff" stroke-width="2" />'
+        f'<circle cx="{be_x:.1f}" cy="{be_y:.1f}" r="5" fill="#2563eb" stroke="#ffffff" stroke-width="2" />'
     )
 
-    box_w = 172
-    box_h = 27
-    box_x = be_x - box_w / 2
-    box_y = 5
+    # Marker 1 Callout Badge (anchored to the left of be_x rule, never colliding with Marker 2)
+    box_w = 146
+    box_h = 32
+    box_x = be_x - box_w
+    box_y = 18
     svg_parts.append(
         f'<g>'
-        f'<rect x="{box_x:.1f}" y="{box_y:.1f}" width="{box_w}" height="{box_h}" rx="4" '
-        f'fill="#fffbeb" stroke="#d97706" stroke-width="1.2" />'
-        f'<text x="{box_x + box_w / 2:.1f}" y="{box_y + 11.5:.1f}" text-anchor="middle" font-size="10" '
-        f'font-weight="bold" fill="#92400e" style="font-variant-numeric: tabular-nums;">Crossing: ₹{breakeven_penalty_inr:,.2f}</text>'
-        f'<text x="{box_x + box_w / 2:.1f}" y="{box_y + 22:.1f}" text-anchor="middle" font-size="8.5" '
-        f'font-weight="600" fill="#b45309">agent_rules > naive_rules</text>'
+        f'<line x1="{be_x:.1f}" y1="{box_y + box_h}" x2="{be_x:.1f}" y2="{margin_top}" stroke="#2563eb" stroke-width="1.2" />'
+        f'<rect x="{box_x:.1f}" y="{box_y}" width="{box_w}" height="{box_h}" rx="4" '
+        f'fill="#eff6ff" stroke="#93c5fd" stroke-width="1.2" />'
+        f'<text x="{box_x + box_w / 2:.1f}" y="{box_y + 13:.1f}" text-anchor="middle" font-size="10" '
+        f'font-weight="bold" fill="#1d4ed8" style="font-variant-numeric: tabular-nums;">Crossing: ₹{breakeven_penalty_inr:,.2f}</text>'
+        f'<text x="{box_x + box_w / 2:.1f}" y="{box_y + 25:.1f}" text-anchor="middle" font-size="8.5" '
+        f'font-weight="600" fill="#2563eb">agent_rules > naive_rules</text>'
         f'</g>'
     )
 
-    # Marker 2 Callout: Oracle Compliance Threshold Badge
+    # Marker 2 Threshold Dot on Oracle curve where violations drop to 0
     oracle_val_at_ot = sweep_results[5000].get("oracle", 26110.62)
     ot_y = map_y(oracle_val_at_ot)
     svg_parts.append(
-        f'<circle cx="{ot_x:.1f}" cy="{ot_y:.1f}" r="7" fill="#7c3aed" stroke="#ffffff" stroke-width="2" />'
+        f'<circle cx="{ot_x:.1f}" cy="{ot_y:.1f}" r="5" fill="#94a3b8" stroke="#ffffff" stroke-width="2" />'
     )
 
-    ot_box_w = 186
-    ot_box_h = 27
-    ot_box_x = ot_x - ot_box_w / 2
-    ot_box_y = 36
+    # Marker 2 Callout Badge (anchored to the right of ot_x rule, separated by 67px from Marker 1)
+    ot_box_w = 156
+    ot_box_h = 32
+    ot_box_x = ot_x
+    ot_box_y = 18
     svg_parts.append(
         f'<g>'
-        f'<rect x="{ot_box_x:.1f}" y="{ot_box_y:.1f}" width="{ot_box_w}" height="{ot_box_h}" rx="4" '
-        f'fill="#f5f3ff" stroke="#7c3aed" stroke-width="1.2" />'
-        f'<text x="{ot_box_x + ot_box_w / 2:.1f}" y="{ot_box_y + 11.5:.1f}" text-anchor="middle" font-size="10" '
-        f'font-weight="bold" fill="#5b21b6" style="font-variant-numeric: tabular-nums;">Oracle Threshold: ₹{oracle_threshold_inr:,.2f}</text>'
-        f'<text x="{ot_box_x + ot_box_w / 2:.1f}" y="{ot_box_y + 22:.1f}" text-anchor="middle" font-size="8.5" '
-        f'font-weight="600" fill="#6d28d9">violations drop to 0</text>'
-        f'</g>'
-    )
-
-    # Plunge label for always_retry
-    always_end_y = map_y(sweep_results[5000].get("always_retry", -66666.0))
-    svg_parts.append(
-        f'<g transform="translate({map_x(5000) - 195}, {always_end_y - 24})">'
-        f'<rect x="0" y="0" width="185" height="22" rx="4" fill="#fee2e2" stroke="#dc2626" stroke-width="1" />'
-        f'<text x="92.5" y="15" text-anchor="middle" font-size="9.5" font-weight="bold" fill="#991b1b">'
-        f'always_retry plunges below zero</text>'
+        f'<line x1="{ot_x:.1f}" y1="{ot_box_y + ot_box_h}" x2="{ot_x:.1f}" y2="{margin_top}" stroke="#94a3b8" stroke-width="1.2" />'
+        f'<rect x="{ot_box_x:.1f}" y="{ot_box_y}" width="{ot_box_w}" height="{ot_box_h}" rx="4" '
+        f'fill="#f8fafc" stroke="#cbd5e1" stroke-width="1.2" />'
+        f'<text x="{ot_box_x + ot_box_w / 2:.1f}" y="{ot_box_y + 13:.1f}" text-anchor="middle" font-size="10" '
+        f'font-weight="bold" fill="#334155" style="font-variant-numeric: tabular-nums;">Oracle Threshold: ₹{oracle_threshold_inr:,.2f}</text>'
+        f'<text x="{ot_box_x + ot_box_w / 2:.1f}" y="{ot_box_y + 25:.1f}" text-anchor="middle" font-size="8.5" '
+        f'font-weight="600" fill="#64748b">violations drop to 0</text>'
         f'</g>'
     )
 
@@ -696,6 +718,11 @@ def generate_benchmark_html(
             border-collapse: collapse;
             font-size: 13.5px;
             text-align: left;
+            font-variant-numeric: tabular-nums;
+        }}
+
+        th, td, .num-cell {{
+            font-variant-numeric: tabular-nums;
         }}
 
         th {{
@@ -878,7 +905,7 @@ def generate_benchmark_html(
             <div class="key-finding-box">
                 <div class="key-finding-tag">Key Finding</div>
                 <div class="key-finding-body">
-                    Compliance-guarded recovery (<strong>agent_rules</strong>) overtakes unconstrained retrying (<strong>naive_rules</strong>) at an exact penalty of <strong>₹{breakeven_penalty_inr:,.2f}</strong> per violation. Above <strong>₹{oracle_threshold_inr:,.2f}</strong>, even an unconstrained profit-maximizing Oracle with full model knowledge completely eliminates all violations — above this price, violation stops paying on its own terms.
+                    Compliance-guarded recovery (<strong>agent_rules</strong>) overtakes unconstrained retrying (<strong>naive_rules</strong>) at an exact penalty of <strong>₹{breakeven_penalty_inr:,.2f}</strong> per violation. Above <strong>₹{oracle_threshold_inr:,.2f}</strong>, even an unconstrained profit-maximiser with full model knowledge stops violating, because violation stops paying on its own terms.
                 </div>
             </div>
 
@@ -893,7 +920,7 @@ def generate_benchmark_html(
             <div class="chart-box">
                 {curve_svg}
             </div>
-            <p class="chart-caption">Lines show mean net recovery at each penalty level. See the sensitivity table for exact values.</p>
+            <p class="chart-caption">Lines show mean net recovery across penalty levels from ₹0 to ₹5,000. agent_rules and agent_llm nearly coincide (differing by only ₹285 at this scale) — that near-coincidence is the finding: compliance guards and expected-value gating achieve parity with an LLM decision engine while eliminating non-compliance risk. See the sensitivity table for exact values.</p>
         </section>
 
         <!-- 2.d Horizontal Bar Chart at Base Penalty -->
